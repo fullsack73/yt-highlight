@@ -1,10 +1,10 @@
-import SampleComponent from "./SampleComponent.jsx";
+import GetComments from "./GetComments.jsx"
 
 function App() {
 
   return (
     <>
-      <SampleComponent videoId={"dQw4w9WgXcQ"}/>
+      <GetComments videoId={"dQw4w9WgXcQ"}/>
     </>
   )
 }
