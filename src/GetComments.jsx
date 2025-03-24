@@ -3,7 +3,7 @@ import axios from 'axios';
 
 const API_KEY = "AIzaSyC3Wb74eaTb_mnKbV5RXZ607SZJI0or5hM";
 
-const SampleComponent = ({ videoId }) => {
+const GetComments = ({ videoId }) => {
   const [comments, setComments] = useState([]);
 
   const fetchComments = async () => {
@@ -52,4 +52,4 @@ const SampleComponent = ({ videoId }) => {
   );
 };
 
-export default SampleComponent;
+export default GetComments;
