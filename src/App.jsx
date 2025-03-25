@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import GetComments from "./GetComments.jsx"
+import VideoComments from "./VideoComments.jsx"
 import VideoInput from "./VideoInput.jsx"
 
 function App() {
@@ -8,7 +8,7 @@ function App() {
   return (
     <div>
       {/* <VideoInput onVideoSubmit={setVideoId} /> */}
-      <GetComments videoId={"dQw4w9WgXcQ"} />
+      <VideoComments videoId={"dQw4w9WgXcQ"} />
     </div>
   );
 }
