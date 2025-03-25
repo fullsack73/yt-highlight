@@ -1,0 +1,81 @@
+/* General Styles */
+body {
+    font-family: Arial, sans-serif;
+    text-align: center;
+    padding: 20px;
+  }
+  
+  /* Input Section */
+  .input-container {
+    text-align: center;
+    margin-bottom: 20px;
+  }
+  
+  .input-container input {
+    width: 60%;
+    padding: 10px;
+    font-size: 16px;
+    border-radius: 5px;
+    border: 1px solid #ccc;
+  }
+  
+  .input-container button {
+    margin-left: 10px;
+    padding: 10px 15px;
+    font-size: 16px;
+    background: #ff0000;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+  }
+  
+  .input-container button:hover {
+    background: #cc0000;
+  }
+  
+  /* Comments Section */
+  .comments-container {
+    margin-top: 20px;
+    text-align: left;
+    max-width: 600px;
+    margin: auto;
+  }
+  
+  .comment-item {
+    margin-bottom: 10px;
+    border-bottom: 1px solid #ddd;
+    padding-bottom: 5px;
+  }
+  
+  .comment-timestamp {
+    margin-right: 5px;
+    color: #007BFF;
+    text-decoration: none;
+  }
+  
+  .comment-timestamp:hover {
+    text-decoration: underline;
+  }
+  
+  /* Error Message */
+  .error-message {
+    color: red;
+    margin-top: 10px;
+  }
+  
+  /* Button Styles */
+  .load-comments-button {
+    padding: 10px 15px;
+    font-size: 16px;
+    background: #007BFF;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+  }
+  
+  .load-comments-button:hover {
+    background: #0056b3;
+  }
+  

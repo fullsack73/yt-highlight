@@ -1,10 +1,13 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
+import "./index.css";
 
 const API_KEY = "AIzaSyC3Wb74eaTb_mnKbV5RXZ607SZJI0or5hM";
+const timestampRegex = /\b(?:\d+:)?\d{1,2}:\d{2}\b/g;
 
 const GetComments = ({ videoId }) => {
   const [comments, setComments] = useState([]);
+  const [error, setError] = useState("");
 
   const fetchComments = async () => {
     try {
@@ -16,38 +19,63 @@ const GetComments = ({ videoId }) => {
             videoId: videoId,
             part: "snippet",
             maxResults: 50,
-            order: "relevance", // You can also use "time"
+            order: "relevance",
           },
         }
       );
 
+
       const filteredComments = response.data.items
-        .map((item) => ({
-          text: item.snippet.topLevelComment.snippet.textDisplay,
-          likeCount: item.snippet.topLevelComment.snippet.likeCount,
-          timestamp: item.snippet.topLevelComment.snippet.publishedAt,
-        }))
-        .filter((comment) => comment.likeCount >= 5) // Filter based on likes
-        .sort((a, b) => b.likeCount - a.likeCount); // Sort by likes in descending order
+        .map((item) => {
+          const text = item.snippet.topLevelComment.snippet.textDisplay;
+          const timestamps = text.match(timestampRegex) || []; // Find timestamps
+          return {
+            text,
+            likeCount: item.snippet.topLevelComment.snippet.likeCount,
+            timestamps,
+          };
+        })
+        .filter((comment) => comment.timestamps.length > 0);
 
       setComments(filteredComments);
-    } catch (error) {
-      console.error("Error fetching comments", error);
+    } catch (err) {
+      console.error("Error fetching comments:", err);
+      setError("Failed to fetch comments. Check your API key.");
     }
   };
 
   return (
     <div>
-      <h2>YouTube Comments</h2>
-      <button onClick={fetchComments}>Load Comments</button>
-      <ul>
-        {comments.map((comment, index) => (
-          <li key={index}>
-            <strong>{comment.likeCount} Likes:</strong> {comment.text} <br />
-            <small>{new Date(comment.timestamp).toLocaleString()}</small>
-          </li>
-        ))}
-      </ul>
+      <button className="load-comments-button" onClick={fetchComments}>
+        Load Comments
+      </button>
+
+      {error && <p style={{ color: "red" }}>{error}</p>}
+
+      {comments.length > 0 && (
+        <div className="comments-container">
+          <h3>Comments with Timestamps:</h3>
+          <ul>
+            {comments.map((comment, index) => (
+              <li key={index} className="comment-item">
+                <p>{comment.text}</p>
+                <strong>Timestamps:</strong>{" "}
+                {comment.timestamps.map((time, i) => (
+                  <a
+                    key={i}
+                    href={`https://www.youtube.com/watch?v=${videoId}&t=${time.replace(":", "m")}s`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="comment-timestamp"
+                  >
+                    {time}
+                  </a>
+                ))}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 };
