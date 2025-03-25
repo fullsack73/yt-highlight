@@ -1,14 +1,14 @@
 import React, { useState } from "react";
-import VideoComments from "./VideoComments.jsx"
-import VideoInput from "./VideoInput.jsx"
+import VideoComments from "./VideoComments.jsx";
+import VideoInput from "./VideoInput.jsx";
 
 function App() {
   const [videoId, setVideoId] = useState("");
 
   return (
     <div>
-      {/* <VideoInput onVideoSubmit={setVideoId} /> */}
-      <VideoComments videoId={"dQw4w9WgXcQ"} />
+      <VideoInput onVideoSubmit={setVideoId} />
+      {videoId && <VideoComments videoId={videoId} />}
     </div>
   );
 }

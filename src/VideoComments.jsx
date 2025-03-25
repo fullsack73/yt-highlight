@@ -10,22 +10,33 @@ const VideoComments = ({ videoId }) => {
   const [error, setError] = useState("");
 
   const fetchComments = async () => {
+    console.log("Fetching comments..."); // Debug log
+    console.log("Video ID:", videoId); // Debug log
+    let allComments = [];
+    let nextPageToken = null;
+
     try {
-      const response = await axios.get(
-        `https://www.googleapis.com/youtube/v3/commentThreads`,
-        {
-          params: {
-            key: API_KEY,
-            videoId: videoId,
-            part: "snippet",
-            maxResults: 50,
-            order: "relevance",
-          },
-        }
-      );
+      do {
+        const response = await axios.get(
+          `https://www.googleapis.com/youtube/v3/commentThreads`,
+          {
+            params: {
+              key: API_KEY,
+              videoId: videoId,
+              part: "snippet",
+              maxResults: 100,
+              order: "relevance",
+              pageToken: nextPageToken, // Use the nextPageToken for pagination
+            },
+          }
+        );
 
+        allComments = allComments.concat(response.data.items); // Append new comments
+        nextPageToken = response.data.nextPageToken; // Update the nextPageToken
+      } while (nextPageToken); // Continue fetching until there are no more pages
 
-      const filteredComments = response.data.items
+      // Process all comments
+      const filteredComments = allComments
         .map((item) => {
           const text = item.snippet.topLevelComment.snippet.textDisplay;
           const timestamps = text.match(timestampRegex) || []; // Find timestamps
@@ -38,6 +49,7 @@ const VideoComments = ({ videoId }) => {
         .filter((comment) => comment.timestamps.length > 0);
 
       setComments(filteredComments);
+
     } catch (err) {
       console.error("Error fetching comments:", err);
       setError("Failed to fetch comments. Check your API key.");
