@@ -5,7 +5,7 @@ import "./index.css";
 const API_KEY = "AIzaSyC3Wb74eaTb_mnKbV5RXZ607SZJI0or5hM";
 const timestampRegex = /\b(?:\d+:)?\d{1,2}:\d{2}\b/g;
 
-const GetComments = ({ videoId }) => {
+const VideoComments = ({ videoId }) => {
   const [comments, setComments] = useState([]);
   const [error, setError] = useState("");
 
@@ -80,4 +80,4 @@ const GetComments = ({ videoId }) => {
   );
 };
 
-export default GetComments;
+export default VideoComments;
