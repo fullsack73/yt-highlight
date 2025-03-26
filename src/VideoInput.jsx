@@ -1,5 +1,7 @@
-import React, { useState } from "react";
+import React, { useState, createContext } from "react";
 import "./index.css";
+
+export let UrlContext = createContext();
 
 const VideoInput = ({ onVideoSubmit }) => {
   const [videoUrl, setVideoUrl] = useState("");
@@ -16,6 +18,7 @@ const VideoInput = ({ onVideoSubmit }) => {
   const handleSubmit = (e) => {
     e.preventDefault();
     const videoId = extractVideoId(videoUrl);
+    <UrlContext.Provider value={videoUrl} />
     if (videoId) {
       setError("");
       onVideoSubmit(videoId); // Pass video ID to parent
