@@ -8,9 +8,10 @@ function App() {
 
   return (
     <div>
-      <VideoInput onVideoSubmit={setVideoId} />
-      {videoId && <VideoComments videoId={videoId} />}
-      {videoId && <VideoPlayer />}
+      <VideoInput onVideoSubmit={setVideoId}>
+        {videoId && <VideoComments videoId={videoId} />}
+        {videoId && <VideoPlayer />}
+      </VideoInput>
     </div>
   );
 }

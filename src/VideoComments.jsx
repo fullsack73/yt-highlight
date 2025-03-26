@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useContext } from 'react';
 import axios from 'axios';
+import { TimestampContext } from "./VideoInput.jsx";
 import "./index.css";
 
 const API_KEY = "AIzaSyC3Wb74eaTb_mnKbV5RXZ607SZJI0or5hM";
@@ -8,10 +9,11 @@ const timestampRegex = /\b(?:\d+:)?\d{1,2}:\d{2}\b/g;
 const VideoComments = ({ videoId }) => {
   const [comments, setComments] = useState([]);
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false); // New loading state
+  const [loading, setLoading] = useState(false);
+  const { setCurrentTimestamp } = useContext(TimestampContext);
 
   const fetchComments = async () => {
-    setLoading(true); // Start loading
+    setLoading(true);
     let allComments = [];
     let nextPageToken = null;
 
@@ -26,20 +28,19 @@ const VideoComments = ({ videoId }) => {
               part: "snippet",
               maxResults: 100,
               order: "relevance",
-              pageToken: nextPageToken, // Use the nextPageToken for pagination
+              pageToken: nextPageToken,
             },
           }
         );
 
-        allComments = allComments.concat(response.data.items); // Append new comments
-        nextPageToken = response.data.nextPageToken; // Update the nextPageToken
-      } while (nextPageToken); // Continue fetching until there are no more pages
+        allComments = allComments.concat(response.data.items);
+        nextPageToken = response.data.nextPageToken;
+      } while (nextPageToken);
 
-      // Process all comments
       const filteredComments = allComments
         .map((item) => {
           const text = item.snippet.topLevelComment.snippet.textDisplay;
-          const timestamps = text.match(timestampRegex) || []; // Find timestamps
+          const timestamps = text.match(timestampRegex) || [];
           const likeCount = item.snippet.topLevelComment.snippet.likeCount || 0;
           return {
             text,
@@ -57,6 +58,10 @@ const VideoComments = ({ videoId }) => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleTimestampClick = (timestamp) => {
+    setCurrentTimestamp(timestamp);
   };
 
   return (
@@ -79,15 +84,21 @@ const VideoComments = ({ videoId }) => {
                 <p><strong>Likes:</strong> {comment.likeCount}</p>
                 <strong>Timestamps:</strong>{" "}
                 {comment.timestamps.map((time, i) => (
-                  <a
+                  <button
                     key={i}
-                    href={`https://www.youtube.com/watch?v=${videoId}&t=${time.replace(":", "m")}s`}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                    onClick={() => handleTimestampClick(time)}
                     className="comment-timestamp"
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: '#065fd4',
+                      textDecoration: 'underline',
+                      cursor: 'pointer',
+                      padding: '0 5px'
+                    }}
                   >
                     {time}
-                  </a>
+                  </button>
                 ))}
               </li>
             ))}

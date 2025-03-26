@@ -2,10 +2,12 @@ import React, { useState, createContext } from "react";
 import "./index.css";
 
 export let UrlContext = createContext();
+export let TimestampContext = createContext();
 
-const VideoInput = ({ onVideoSubmit }) => {
+const VideoInput = ({ onVideoSubmit, children }) => {
   const [videoUrl, setVideoUrl] = useState("");
   const [error, setError] = useState("");
+  const [currentTimestamp, setCurrentTimestamp] = useState("");
 
   // Function to extract Video ID from URL
   const extractVideoId = (url) => {
@@ -18,7 +20,6 @@ const VideoInput = ({ onVideoSubmit }) => {
   const handleSubmit = (e) => {
     e.preventDefault();
     const videoId = extractVideoId(videoUrl);
-    <UrlContext.Provider value={videoUrl} />
     if (videoId) {
       setError("");
       onVideoSubmit(videoId); // Pass video ID to parent
@@ -28,19 +29,24 @@ const VideoInput = ({ onVideoSubmit }) => {
   };
 
   return (
-    <div className="input-container">
-      <h2>YouTube Comment Highlighter</h2>
-      <form onSubmit={handleSubmit}>
-      <input 
-          type="text" 
-          value={videoUrl}  
-          onChange={(e) => setVideoUrl(e.target.value)}
-          placeholder="Enter YouTube video URL"
-      />
-        <button type="submit">Fetch Comments</button> 
-      </form>
-      {error && <p className="error-message">{error}</p>}
-    </div>
+    <UrlContext.Provider value={videoUrl}>
+      <TimestampContext.Provider value={{ currentTimestamp, setCurrentTimestamp }}>
+        <div className="input-container">
+          <h2>YouTube Comment Highlighter</h2>
+          <form onSubmit={handleSubmit}>
+            <input 
+              type="text" 
+              value={videoUrl}  
+              onChange={(e) => setVideoUrl(e.target.value)}
+              placeholder="Enter YouTube video URL"
+            />
+            <button type="submit">Fetch Comments</button> 
+          </form>
+          {error && <p className="error-message">{error}</p>}
+          {children}
+        </div>
+      </TimestampContext.Provider>
+    </UrlContext.Provider>
   );
 };
 
