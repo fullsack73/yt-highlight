@@ -8,10 +8,10 @@ const timestampRegex = /\b(?:\d+:)?\d{1,2}:\d{2}\b/g;
 const VideoComments = ({ videoId }) => {
   const [comments, setComments] = useState([]);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false); // New loading state
 
   const fetchComments = async () => {
-    console.log("Fetching comments..."); // Debug log
-    console.log("Video ID:", videoId); // Debug log
+    setLoading(true); // Start loading
     let allComments = [];
     let nextPageToken = null;
 
@@ -40,27 +40,32 @@ const VideoComments = ({ videoId }) => {
         .map((item) => {
           const text = item.snippet.topLevelComment.snippet.textDisplay;
           const timestamps = text.match(timestampRegex) || []; // Find timestamps
+          const likeCount = item.snippet.topLevelComment.snippet.likeCount || 0;
           return {
             text,
-            likeCount: item.snippet.topLevelComment.snippet.likeCount,
+            likeCount,
             timestamps,
           };
         })
-        .filter((comment) => comment.timestamps.length > 0);
+        .filter((comment) => comment.timestamps.length > 0 && comment.likeCount > 20);
 
       setComments(filteredComments);
 
     } catch (err) {
       console.error("Error fetching comments:", err);
       setError("Failed to fetch comments. Check your API key.");
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
     <div>
-      <button className="load-comments-button" onClick={fetchComments}>
-        Load Comments
+      <button className="load-comments-button" onClick={fetchComments} disabled={loading}>
+        {loading ? "Loading..." : "Load Comments"}
       </button>
+
+      {loading && <div className="spinner"></div>}
 
       {error && <p style={{ color: "red" }}>{error}</p>}
 
@@ -71,6 +76,7 @@ const VideoComments = ({ videoId }) => {
             {comments.map((comment, index) => (
               <li key={index} className="comment-item">
                 <p>{comment.text}</p>
+                <p><strong>Likes:</strong> {comment.likeCount}</p>
                 <strong>Timestamps:</strong>{" "}
                 {comment.timestamps.map((time, i) => (
                   <a
