@@ -63,11 +63,11 @@ const VideoPlayer = () => {
   }
 
   return (
-    <div style={{ marginTop: '20px' }}>
+    <div className="video-container">
       {/* YouTube 임베드 iframe */}
       <iframe
         ref={iframeRef}
-        width="600"
+        width="100%"
         height="400"
         src={`https://www.youtube.com/embed/${videoId}`}
         title="YouTube video player"
