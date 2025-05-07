@@ -5,16 +5,17 @@ import VideoPlayer from "./VideoPlayer.jsx";
 
 function App() {
   const [videoId, setVideoId] = useState("");
+  const [timestampSeconds, setTimestampSeconds] = useState([]);
 
   return (
     <div>
       <VideoInput onVideoSubmit={setVideoId}>
         <div className="main-content">
           <div className="left-column">
-            {videoId && <VideoComments videoId={videoId} />}
+            {videoId && <VideoComments videoId={videoId} setTimestampSeconds={setTimestampSeconds} />}
           </div>
           <div className="right-column">
-            {videoId && <VideoPlayer />}
+            {videoId && <VideoPlayer timestampSeconds={timestampSeconds} />}
           </div>
         </div>
       </VideoInput>

@@ -184,3 +184,14 @@ body {
     color: #666;
     text-align: right;
   }
+
+  .timeline-marker {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    width: 2px;
+    background: #065fd4;
+    z-index: 2;
+    pointer-events: none;
+    border-radius: 1px;
+  }

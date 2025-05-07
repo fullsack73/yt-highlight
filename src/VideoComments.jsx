@@ -14,12 +14,23 @@ const timestampRegex = /\b(?:\d+:)?\d{1,2}:\d{2}\b/g;
  * - 타임스탬프가 포함된 댓글 필터링
  * - 타임스탬프 클릭 시 비디오 재생 위치 변경
  */
-const VideoComments = ({ videoId }) => {
+const VideoComments = ({ videoId, setTimestampSeconds }) => {
   // 상태 관리
   const [comments, setComments] = useState([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const { setCurrentTimestamp } = useContext(TimestampContext);
+
+  // Helper: Convert timestamp string to seconds
+  const timestampToSeconds = (timestamp) => {
+    const parts = timestamp.split(":").map(Number);
+    if (parts.length === 2) {
+      return parts[0] * 60 + parts[1];
+    } else if (parts.length === 3) {
+      return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    }
+    return 0;
+  };
 
   /**
    * YouTube API를 사용하여 댓글 가져오기
@@ -69,9 +80,17 @@ const VideoComments = ({ videoId }) => {
 
       setComments(filteredComments);
 
+      // Collect all unique timestamps in seconds
+      const allTimestamps = filteredComments.flatMap(c => c.timestamps);
+      const uniqueSeconds = Array.from(new Set(
+        allTimestamps.map(timestampToSeconds)
+      )).sort((a, b) => a - b);
+      setTimestampSeconds && setTimestampSeconds(uniqueSeconds);
+
     } catch (err) {
       console.error("Error fetching comments:", err);
       setError("Failed to fetch comments. Check your API key.");
+      setTimestampSeconds && setTimestampSeconds([]);
     } finally {
       setLoading(false);
     }
