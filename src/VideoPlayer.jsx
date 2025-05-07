@@ -8,7 +8,7 @@ import "./index.css";
  * - 타임스탬프 클릭 시 해당 시점으로 비디오 이동
  * - 인터랙티브 타임라인 바 제공
  */
-const VideoPlayer = () => {
+const VideoPlayer = ({ timestampSeconds = [] }) => {
   const videoUrl = useContext(UrlContext);
   const { currentTimestamp, setCurrentTimestamp } = useContext(TimestampContext);
   const playerRef = useRef(null);
@@ -45,31 +45,55 @@ const VideoPlayer = () => {
     return `${minutes}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Load YouTube IFrame API
+  // Load and initialize YouTube IFrame API and player
   useEffect(() => {
-    if (!window.YT) {
-      const tag = document.createElement('script');
-      tag.src = 'https://www.youtube.com/iframe_api';
-      document.body.appendChild(tag);
-    }
-    // YT API ready callback
-    window.onYouTubeIframeAPIReady = () => {
+    let ytPlayer;
+    let isMounted = true;
+
+    function createPlayer() {
       if (playerRef.current && videoId) {
-        const ytPlayer = new window.YT.Player(playerRef.current, {
+        ytPlayer = new window.YT.Player(playerRef.current, {
           videoId: videoId,
           events: {
             onReady: (event) => {
+              if (!isMounted) return;
               setDuration(event.target.getDuration());
               setCurrentTime(event.target.getCurrentTime());
               setPlayer(event.target);
             },
             onStateChange: (event) => {
+              if (!isMounted) return;
               if (event.data === window.YT.PlayerState.PLAYING) {
                 setDuration(event.target.getDuration());
               }
             }
           }
         });
+      }
+    }
+
+    // Clean up previous player instance
+    setPlayer(null);
+    if (playerRef.current) {
+      playerRef.current.innerHTML = "";
+    }
+
+    if (window.YT && window.YT.Player) {
+      createPlayer();
+    } else {
+      // Load the API if not already loaded
+      const tag = document.createElement('script');
+      tag.src = 'https://www.youtube.com/iframe_api';
+      document.body.appendChild(tag);
+      window.onYouTubeIframeAPIReady = () => {
+        createPlayer();
+      };
+    }
+
+    return () => {
+      isMounted = false;
+      if (ytPlayer && ytPlayer.destroy) {
+        ytPlayer.destroy();
       }
     };
   }, [videoId]);
@@ -129,11 +153,29 @@ const VideoPlayer = () => {
               handleTimelineClick(e);
             }
           }}
+          style={{ position: 'relative' }}
         >
           <div 
             className="timeline-progress"
             style={{ width: duration ? `${(currentTime / duration) * 100}%` : '0%' }}
           />
+          {/* Timestamp markers */}
+          {duration && timestampSeconds.map((sec, idx) => (
+            <div
+              key={idx}
+              className="timeline-marker"
+              style={{
+                left: `${(sec / duration) * 100}%`,
+                position: 'absolute',
+                top: 0,
+                height: '100%',
+                width: '2px',
+                background: '#065fd4',
+                zIndex: 2,
+                pointerEvents: 'none',
+              }}
+            />
+          ))}
         </div>
         <div className="timeline-time">
           {secondsToTimestamp(currentTime)} / {secondsToTimestamp(duration)}

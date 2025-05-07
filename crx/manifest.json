@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "Dummy Extension",
+  "version": "1.0",
+  "description": "A dummy Chrome extension for development.",
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icon16.png",
+      "48": "icon48.png",
+      "128": "icon128.png"
+    }
+  },
+  "permissions": []
+} 
