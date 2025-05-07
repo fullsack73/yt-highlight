@@ -105,14 +105,18 @@ const VideoComments = ({ videoId, setTimestampSeconds }) => {
     setCurrentTimestamp(timestamp);
   };
 
+  // Automatically fetch comments when videoId changes
+  useEffect(() => {
+    if (videoId) {
+      fetchComments();
+    }
+    // eslint-disable-next-line
+  }, [videoId]);
+
   return (
     <div>
-      {/* 댓글 로드 버튼 */}
-      <button className="load-comments-button" onClick={fetchComments} disabled={loading}>
-        {loading ? "Loading..." : "Load Comments"}
-      </button>
-
-      {/* 로딩 스피너 */}
+      {/* 댓글 로드 버튼 제거됨 - 자동 로드 */}
+      {/* {loading && <div className="spinner"></div>} */}
       {loading && <div className="spinner"></div>}
 
       {/* 에러 메시지 */}
