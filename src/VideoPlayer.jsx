@@ -45,6 +45,17 @@ const VideoPlayer = ({ timestampSeconds = [] }) => {
     return `${minutes}:${secs.toString().padStart(2, '0')}`;
   };
 
+  // Helper: Convert timestamp string to seconds (copied from VideoComments)
+  const timestampToSeconds = (timestamp) => {
+    const parts = timestamp.split(":").map(Number);
+    if (parts.length === 2) {
+      return parts[0] * 60 + parts[1];
+    } else if (parts.length === 3) {
+      return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    }
+    return 0;
+  };
+
   // Load and initialize YouTube IFrame API and player
   useEffect(() => {
     let ytPlayer;
@@ -109,6 +120,16 @@ const VideoPlayer = ({ timestampSeconds = [] }) => {
     }
     return () => clearInterval(interval);
   }, [player]);
+
+  // Seek video when currentTimestamp changes
+  useEffect(() => {
+    if (player && currentTimestamp) {
+      const seconds = timestampToSeconds(currentTimestamp);
+      if (!isNaN(seconds) && seconds > 0) {
+        player.seekTo(seconds, true);
+      }
+    }
+  }, [currentTimestamp, player]);
 
   /**
    * 타임라인 클릭/드래그 처리
