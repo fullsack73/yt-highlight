@@ -20,6 +20,7 @@ const VideoComments = ({ videoId, setTimestampSeconds }) => {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const { setCurrentTimestamp } = useContext(TimestampContext);
+  const [timestampFrequency, setTimestampFrequency] = useState({});
 
   // Helper: Convert timestamp string to seconds
   const timestampToSeconds = (timestamp) => {
@@ -82,15 +83,40 @@ const VideoComments = ({ videoId, setTimestampSeconds }) => {
 
       // Collect all unique timestamps in seconds
       const allTimestamps = filteredComments.flatMap(c => c.timestamps);
-      const uniqueSeconds = Array.from(new Set(
-        allTimestamps.map(timestampToSeconds)
-      )).sort((a, b) => a - b);
+      const allTimestampsInSeconds = allTimestamps.map(timestampToSeconds);
+      const uniqueSeconds = Array.from(new Set(allTimestampsInSeconds)).sort((a, b) => a - b);
       setTimestampSeconds && setTimestampSeconds(uniqueSeconds);
+
+      // Build frequency map for timestamps (in seconds), grouping within ±20 seconds
+      const freq = {};
+      const sortedSeconds = [...allTimestampsInSeconds].sort((a, b) => a - b);
+      // Map each timestamp to its group leader (earliest in its ±20s group)
+      const groupLeaders = {};
+      for (let i = 0; i < sortedSeconds.length; i++) {
+        const sec = sortedSeconds[i];
+        // Find the earliest timestamp within ±20s
+        let leader = sec;
+        for (let j = 0; j < sortedSeconds.length; j++) {
+          if (Math.abs(sortedSeconds[j] - sec) <= 20 && sortedSeconds[j] < leader) {
+            leader = sortedSeconds[j];
+          }
+        }
+        groupLeaders[sec] = leader;
+      }
+      // Count group sizes
+      const groupCounts = {};
+      Object.values(groupLeaders).forEach(leader => {
+        groupCounts[leader] = (groupCounts[leader] || 0) + 1;
+      });
+      setTimestampFrequency(groupCounts);
+      // Also pass groupLeaders for rendering
+      setTimestampFrequency(prev => ({ ...groupCounts, _groupLeaders: groupLeaders }));
 
     } catch (err) {
       console.error("Error fetching comments:", err);
       setError("Failed to fetch comments. Check your API key.");
       setTimestampSeconds && setTimestampSeconds([]);
+      setTimestampFrequency({});
     } finally {
       setLoading(false);
     }
@@ -128,27 +154,39 @@ const VideoComments = ({ videoId, setTimestampSeconds }) => {
           <h3>Comments with Timestamps:</h3>
           <ul>
             {comments.map((comment, index) => (
-              <li key={index} className="comment-item">
-                <p>{comment.text}</p>
-                <p><strong>Likes:</strong> {comment.likeCount}</p>
-                <strong>Timestamps:</strong>{" "}
-                {comment.timestamps.map((time, i) => (
-                  <button
-                    key={i}
-                    onClick={() => handleTimestampClick(time)}
-                    className="comment-timestamp"
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      color: '#065fd4',
-                      textDecoration: 'underline',
-                      cursor: 'pointer',
-                      padding: '0 5px'
-                    }}
-                  >
-                    {time}
-                  </button>
-                ))}
+              <li key={index} className="comment-item" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                {/* Likes */}
+                <span style={{ minWidth: 60, color: '#888', fontWeight: 'bold' }}>👍 {comment.likeCount}</span>
+                {/* Timestamps */}
+                <span>
+                  {comment.timestamps.map((time, i) => {
+                    const sec = timestampToSeconds(time);
+                    const groupLeaders = timestampFrequency._groupLeaders || {};
+                    const leader = groupLeaders[sec] !== undefined ? groupLeaders[sec] : sec;
+                    const isEarliest = sec === leader;
+                    const isFrequent = timestampFrequency[leader] > 1;
+                    const isPrioritized = isEarliest && isFrequent;
+                    return (
+                      <button
+                        key={i}
+                        onClick={() => handleTimestampClick(time)}
+                        className="comment-timestamp"
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: isPrioritized ? '#d47b06' : '#065fd4',
+                          textDecoration: 'underline',
+                          cursor: 'pointer',
+                          padding: '0 5px',
+                          fontWeight: isPrioritized ? 'bold' : 'normal',
+                          fontSize: '1rem',
+                        }}
+                      >
+                        {time} {isPrioritized && <span title="Popular timestamp">★</span>}
+                      </button>
+                    );
+                  })}
+                </span>
               </li>
             ))}
           </ul>
