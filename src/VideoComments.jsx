@@ -151,7 +151,7 @@ const VideoComments = ({ videoId, setTimestampSeconds }) => {
       {/* 댓글 목록 */}
       {comments.length > 0 && (
         <div className="comments-container">
-          <h3>Comments with Timestamps:</h3>
+          <h3>타임스탬프가 포함된 댓글:</h3>
           <ul>
             {comments.map((comment, index) => (
               <li key={index} className="comment-item" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
