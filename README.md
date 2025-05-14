@@ -4,14 +4,17 @@
 
 # 개발 환경에서 실행 하는법
 
-1. node.js 설차
-2. repository 다운로드 (git clone 하거나 직접 다운로드)
-3. 터미널에서 npm run dev
+1. node.js 설치
+2. 폴더를 생성 후 IDE로 열기
+3. 터미널에서 git clone https://github.com/fullsack73/yt-highlight .
+4. 터미널에서 npm install
+5. 터미널에서 npm run dev
 
 # TODO
 
-- [ ] '가장 많이 본 부분' 작동 방식 찾기
 - [ ] 자연어 처리 기술 스택 조사
-- [ ] UI 디자인 방향 설정
-- [ ] proximity가 있고 자주 언급되는 타임스탬프 식별하는 알고리줌 구현
-- [ ] 편의성 개선을 위한 Extension 개발 (필요 시)
+- [ ] UI 디자인 수정
+- [ ] 타임스탬프 proximity 알고리즘 수정
+- [ ] Extension 완성 및 통합
+- [ ] 한글화
+- [ ] 백엔드 서버 구현
