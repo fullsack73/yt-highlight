@@ -53,14 +53,14 @@ const VideoInput = ({ onVideoSubmit, children }) => {
     <UrlContext.Provider value={videoUrl}>
       <TimestampContext.Provider value={{ currentTimestamp, setCurrentTimestamp }}>
         <div className="input-container">
-          <h2>YouTube Highlighter</h2>
+          <h2>유튜브 하이라이터</h2>
           {/* URL 입력 폼 */}
           <form onSubmit={e => e.preventDefault()}>
             <input 
               type="text" 
               value={videoUrl}  
               onChange={(e) => setVideoUrl(e.target.value)}
-              placeholder="Enter YouTube video URL"
+              placeholder="유튜브 영상 주소를 입력하세요:"
             />
           </form>
           {/* 에러 메시지 표시 */}
