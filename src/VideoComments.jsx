@@ -21,6 +21,8 @@ const VideoComments = ({ videoId, setTimestampSeconds }) => {
   const [loading, setLoading] = useState(false);
   const { setCurrentTimestamp } = useContext(TimestampContext);
   const [timestampFrequency, setTimestampFrequency] = useState({});
+  const [priorityComments, setPriorityComments] = useState([]);
+  const [otherComments, setOtherComments] = useState([]);
 
   // Helper: Convert timestamp string to seconds
   const timestampToSeconds = (timestamp) => {
@@ -108,9 +110,39 @@ const VideoComments = ({ videoId, setTimestampSeconds }) => {
       Object.values(groupLeaders).forEach(leader => {
         groupCounts[leader] = (groupCounts[leader] || 0) + 1;
       });
-      setTimestampFrequency(groupCounts);
-      // Also pass groupLeaders for rendering
       setTimestampFrequency(prev => ({ ...groupCounts, _groupLeaders: groupLeaders }));
+
+      // Build priority and other comments
+      // Map: leader timestamp (seconds) -> { comment, timestamp }
+      const leaderToPriority = {};
+      // Set to track which comment/timestamp pairs are used as priority
+      const usedCommentTimestamp = new Set();
+      filteredComments.forEach((comment, commentIdx) => {
+        comment.timestamps.forEach((time) => {
+          const sec = timestampToSeconds(time);
+          const leader = groupLeaders[sec] !== undefined ? groupLeaders[sec] : sec;
+          // Only consider as priority if this is the leader and group is frequent
+          if (sec === leader && groupCounts[leader] > 1 && !leaderToPriority[leader]) {
+            leaderToPriority[leader] = { comment, time, commentIdx };
+            usedCommentTimestamp.add(`${commentIdx}_${time}`);
+          }
+        });
+      });
+      // Priority comments: one per group leader
+      const priorityList = Object.values(leaderToPriority);
+      priorityList.sort((a, b) => b.comment.likeCount - a.comment.likeCount);
+      setPriorityComments(priorityList);
+      // Other comments: all timestamps/comments not used as priority
+      const otherList = [];
+      filteredComments.forEach((comment, commentIdx) => {
+        comment.timestamps.forEach((time) => {
+          if (!usedCommentTimestamp.has(`${commentIdx}_${time}`)) {
+            otherList.push({ comment, time, commentIdx });
+          }
+        });
+      });
+      otherList.sort((a, b) => b.comment.likeCount - a.comment.likeCount);
+      setOtherComments(otherList);
 
     } catch (err) {
       console.error("Error fetching comments:", err);
@@ -149,47 +181,66 @@ const VideoComments = ({ videoId, setTimestampSeconds }) => {
       {error && <p style={{ color: "red" }}>{error}</p>}
 
       {/* 댓글 목록 */}
-      {comments.length > 0 && (
+      {(priorityComments.length > 0 || otherComments.length > 0) && (
         <div className="comments-container">
-          <h3>타임스탬프가 포함된 댓글:</h3>
-          <ul>
-            {comments.map((comment, index) => (
-              <li key={index} className="comment-item" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                {/* Likes */}
-                <span style={{ minWidth: 60, color: '#888', fontWeight: 'bold' }}>👍 {comment.likeCount}</span>
-                {/* Timestamps */}
-                <span>
-                  {comment.timestamps.map((time, i) => {
-                    const sec = timestampToSeconds(time);
-                    const groupLeaders = timestampFrequency._groupLeaders || {};
-                    const leader = groupLeaders[sec] !== undefined ? groupLeaders[sec] : sec;
-                    const isEarliest = sec === leader;
-                    const isFrequent = timestampFrequency[leader] > 1;
-                    const isPrioritized = isEarliest && isFrequent;
-                    return (
-                      <button
-                        key={i}
-                        onClick={() => handleTimestampClick(time)}
-                        className="comment-timestamp"
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          color: isPrioritized ? '#d47b06' : '#065fd4',
-                          textDecoration: 'underline',
-                          cursor: 'pointer',
-                          padding: '0 5px',
-                          fontWeight: isPrioritized ? 'bold' : 'normal',
-                          fontSize: '1rem',
-                        }}
-                      >
-                        {time} {isPrioritized && <span title="Popular timestamp">★</span>}
-                      </button>
-                    );
-                  })}
-                </span>
-              </li>
-            ))}
-          </ul>
+          {/* Priority comments section */}
+          {priorityComments.length > 0 && (
+            <>
+              <h3>Priority Highlights</h3>
+              <ul>
+                {priorityComments.map(({ comment, time, commentIdx }, idx) => (
+                  <li key={`priority-${commentIdx}-${time}`} className="comment-item" style={{ display: 'flex', alignItems: 'center', gap: '16px', background: '#fffbe6', borderLeft: '4px solid #d47b06' }}>
+                    <span style={{ minWidth: 60, color: '#d47b06', fontWeight: 'bold' }}>👍 {comment.likeCount}</span>
+                    <button
+                      onClick={() => handleTimestampClick(time)}
+                      className="comment-timestamp"
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: '#d47b06',
+                        textDecoration: 'underline',
+                        cursor: 'pointer',
+                        padding: '0 5px',
+                        fontWeight: 'bold',
+                        fontSize: '1rem',
+                      }}
+                    >
+                      {time} <span title="Popular timestamp">★</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+          {/* Other comments section */}
+          {otherComments.length > 0 && (
+            <>
+              <h3>Other Timestamps</h3>
+              <ul>
+                {otherComments.map(({ comment, time, commentIdx }, idx) => (
+                  <li key={`other-${commentIdx}-${time}`} className="comment-item" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                    <span style={{ minWidth: 60, color: '#888', fontWeight: 'bold' }}>👍 {comment.likeCount}</span>
+                    <button
+                      onClick={() => handleTimestampClick(time)}
+                      className="comment-timestamp"
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: '#065fd4',
+                        textDecoration: 'underline',
+                        cursor: 'pointer',
+                        padding: '0 5px',
+                        fontWeight: 'normal',
+                        fontSize: '1rem',
+                      }}
+                    >
+                      {time}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
         </div>
       )}
     </div>
