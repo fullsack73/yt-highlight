@@ -9,18 +9,19 @@
     <link rel="stylesheet" crossorigin href="/yt-highlight/assets/index-DloZ0Yha.css">
   </head>
   <script>
-  // URL에서 videoUrl 파라미터 가져오기
-  const params = new URLSearchParams(window.location.search);
-  const videoUrl = params.get("videoUrl");
-
-  if (videoUrl) {
-    // input 요소 찾기 (적절한 셀렉터로 수정 가능)
-    const input = document.querySelector('input[type="text"]');
-
-    if (input) {
-      input.value = videoUrl;
-    }
-  }
+    document.addEventListener('DOMContentLoaded', () => {
+      const params = new URLSearchParams(window.location.search);
+      const videoUrl = params.get("videoUrl");
+  
+      if (videoUrl) {
+        const input = document.querySelector('[role="textbox"]');
+        if (input) {
+          input.textContent = videoUrl;
+        } else {
+          console.warn("role='textbox' 요소를 찾을 수 없습니다.");
+        }
+      }
+    });
   </script>
   <body>
     <div id="root"></div>
