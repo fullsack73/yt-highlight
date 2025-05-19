@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import VideoComments from "./VideoComments.jsx";
 import VideoInput from "./VideoInput.jsx";
 import VideoPlayer from "./VideoPlayer.jsx";
@@ -6,31 +6,28 @@ import VideoPlayer from "./VideoPlayer.jsx";
 function App() {
   const [videoId, setVideoId] = useState("");
   const [timestampSeconds, setTimestampSeconds] = useState([]);
-  const [audioHighlights, setAudioHighlights] = useState([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [error, setError] = useState('');
 
-  const handleAudioAnalysis = async (audioFile) => {
-    if (!audioFile) {
-      setError('Please select an audio file');
+  const processYouTubeUrl = async (url) => {
+    if (!url) {
+      setError('Please enter a YouTube URL');
       return;
     }
-
-    const formData = new FormData();
-    formData.append('audio', audioFile);
     
     setIsAnalyzing(true);
     setError('');
     
     try {
-      const response = await fetch('http://localhost:5000/api/highlights', {
+      const response = await fetch('http://localhost:5000/api/process-youtube', {
         method: 'POST',
-        body: formData,
         mode: 'cors',
         credentials: 'same-origin',
         headers: {
+          'Content-Type': 'application/json',
           'Accept': 'application/json',
         },
+        body: JSON.stringify({ youtube_url: url }),
       });
       
       if (!response.ok) {
@@ -39,12 +36,10 @@ function App() {
       }
       
       const data = await response.json();
-      setAudioHighlights(data.highlights);
-      // Update the timestamps to trigger video player updates
-      setTimestampSeconds(data.highlights);
+      setTimestampSeconds(data.highlights || []);
     } catch (err) {
-      console.error('Error analyzing audio:', err);
-      setError(err.message || 'An error occurred while processing the audio');
+      console.error('Error processing YouTube URL:', err);
+      setError(err.message || 'An error occurred while processing the YouTube video');
     } finally {
       setIsAnalyzing(false);
     }
@@ -56,39 +51,31 @@ function App() {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
+  // Extract video ID from YouTube URL
+  const extractVideoId = (url) => {
+    const match = url.match(
+      /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/
+    );
+    return match ? match[1] : null;
+  };
+
   return (
     <div>
-      <VideoInput onVideoSubmit={setVideoId}>
+      <VideoInput onVideoSubmit={(url) => {
+        const videoId = extractVideoId(url);
+        if (videoId) {
+          setVideoId(videoId);
+          processYouTubeUrl(url);
+        } else {
+          setError('Invalid YouTube URL');
+        }
+      }}>
         <div className="main-content">
           <div className="left-column">
             {videoId && (
               <>
-                <div className="audio-upload" style={{ marginBottom: '1rem', padding: '1rem', border: '1px solid #ccc', borderRadius: '4px' }}>
-                  <h3>Audio Highlight Detection</h3>
-                  <input
-                    type="file"
-                    accept="audio/*"
-                    onChange={(e) => handleAudioAnalysis(e.target.files[0])}
-                    disabled={isAnalyzing}
-                    style={{ marginBottom: '0.5rem' }}
-                  />
-                  {isAnalyzing && <p>Analyzing audio... This may take a moment.</p>}
-                  {error && <p style={{ color: 'red' }}>Error: {error}</p>}
-                  
-                  {audioHighlights.length > 0 && (
-                    <div style={{ marginTop: '1rem' }}>
-                      <h4>Detected Highlights:</h4>
-                      <ul style={{ listStyle: 'none', padding: 0, maxHeight: '200px', overflowY: 'auto' }}>
-                        {audioHighlights.map((time, index) => (
-                          <li key={index} style={{ marginBottom: '0.5rem', cursor: 'pointer' }}
-                              onClick={() => setTimestampSeconds([time])}>
-                            {formatTime(time)} - <span style={{ color: '#007bff' }}>Jump to highlight</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </div>
+                {isAnalyzing && <p>Analyzing video for highlights... This may take a moment.</p>}
+                {error && <p style={{ color: 'red' }}>Error: {error}</p>}
                 <VideoComments videoId={videoId} setTimestampSeconds={setTimestampSeconds} />
               </>
             )}

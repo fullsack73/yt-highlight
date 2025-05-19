@@ -40,7 +40,35 @@ const VideoInput = ({ onVideoSubmit, children }) => {
       const videoId = extractVideoId(videoUrl);
       if (videoId) {
         setError("");
-        onVideoSubmit(videoId);
+        // Call backend API
+        fetch('http://localhost:5000/api/process-youtube', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+          body: JSON.stringify({ youtube_url: videoUrl }),
+        })
+        .then(async (response) => {
+          const contentType = response.headers.get('content-type');
+          if (!contentType || !contentType.includes('application/json')) {
+            const text = await response.text();
+            throw new Error(`Invalid response: ${text}`);
+          }
+          return response.json();
+        })
+        .then(data => {
+          if (data.status === 'success') {
+            console.log('Highlights:', data.highlights);
+            onVideoSubmit(videoUrl);
+          } else {
+            setError(data.error || 'Failed to process video');
+          }
+        })
+        .catch((error) => {
+          console.error('Error:', error);
+          setError(error.message || 'An error occurred while processing the video.');
+        });
       } else {
         setError("Invalid YouTube URL. Please enter a valid video link.");
       }
