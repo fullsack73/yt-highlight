@@ -193,7 +193,24 @@ const VideoPlayer = ({ timestampSeconds = [] }) => {
                 width: '2px',
                 background: '#065fd4',
                 zIndex: 2,
-                pointerEvents: 'none',
+                pointerEvents: 'auto',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+                transformOrigin: 'bottom center'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.height = '250%';
+                e.currentTarget.style.transform = 'scaleY(1.5)';
+                e.currentTarget.style.background = '#1a73e8';
+                e.currentTarget.style.boxShadow = '0 0 8px rgba(0, 0, 0, 0.3)';
+                e.currentTarget.style.zIndex = '10';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.height = '100%';
+                e.currentTarget.style.transform = 'scaleY(1)';
+                e.currentTarget.style.background = '#065fd4';
+                e.currentTarget.style.boxShadow = 'none';
+                e.currentTarget.style.zIndex = '2';
               }}
             />
           ))}
