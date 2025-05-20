@@ -186,14 +186,7 @@ const VideoPlayer = ({ timestampSeconds = [] }) => {
               key={idx}
               className="timeline-marker"
               style={{
-                left: `${(sec / duration) * 100}%`,
-                position: 'absolute',
-                top: 0,
-                height: '100%',
-                width: '2px',
-                background: '#065fd4',
-                zIndex: 2,
-                pointerEvents: 'none',
+                left: `${(sec / duration) * 100}%`
               }}
             />
           ))}
