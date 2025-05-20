@@ -232,8 +232,10 @@ body {
   }
 
   .timeline-marker:hover {
-    height: 250%; /* Extend further downward on hover */
-    transform: scaleY(1.5); /* More pronounced vertical stretch */
+    height: 1000%; /* Extend further downward */
+    width: 3.5px; /* Wider on hover */
+    transform: none; /* Remove scaling to prevent upward extension */
+    transform-origin: top center; /* Ensure extension is only downward */
     background: #1a73e8; /* Lighter blue on hover */
     box-shadow: 0 0 8px rgba(0, 0, 0, 0.3); /* More prominent shadow */
     z-index: 10; /* Ensure it appears above other elements */
