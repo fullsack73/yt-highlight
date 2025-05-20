@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import VideoComments from "./VideoComments.jsx";
 import VideoInput from "./VideoInput.jsx";
 import VideoPlayer from "./VideoPlayer.jsx";
