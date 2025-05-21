@@ -14,7 +14,7 @@ const timestampRegex = /\b(?:\d+:)?\d{1,2}:\d{2}\b/g;
  * - 타임스탬프가 포함된 댓글 필터링
  * - 타임스탬프 클릭 시 비디오 재생 위치 변경
  */
-const VideoComments = ({ videoId, setTimestampSeconds }) => {
+const VideoComments = ({ videoId, setTimestampSeconds, onCommentsLoaded }) => {
   // 상태 관리
   const [comments, setComments] = useState([]);
   const [error, setError] = useState("");
@@ -87,7 +87,11 @@ const VideoComments = ({ videoId, setTimestampSeconds }) => {
       const allTimestamps = filteredComments.flatMap(c => c.timestamps);
       const allTimestampsInSeconds = allTimestamps.map(timestampToSeconds);
       const uniqueSeconds = Array.from(new Set(allTimestampsInSeconds)).sort((a, b) => a - b);
+      // Send timestamps to parent component
       setTimestampSeconds && setTimestampSeconds(uniqueSeconds);
+      
+      // Notify parent that comments are loaded
+      onCommentsLoaded && onCommentsLoaded(videoId);
 
       // Build frequency map for timestamps (in seconds), grouping within ±20 seconds
       const freq = {};
@@ -166,6 +170,13 @@ const VideoComments = ({ videoId, setTimestampSeconds }) => {
   // Automatically fetch comments when videoId changes
   useEffect(() => {
     if (videoId) {
+      // Reset states
+      setPriorityComments([]);
+      setOtherComments([]);
+      setTimestampFrequency({});
+      setError("");
+      
+      // Fetch comments
       fetchComments();
     }
     // eslint-disable-next-line
