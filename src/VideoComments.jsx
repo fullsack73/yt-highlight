@@ -14,12 +14,14 @@ const timestampRegex = /\b(?:\d+:)?\d{1,2}:\d{2}\b/g;
  * - 타임스탬프가 포함된 댓글 필터링
  * - 타임스탬프 클릭 시 비디오 재생 위치 변경
  */
-const VideoComments = ({ videoId, setTimestampSeconds, onCommentsLoaded }) => {
+const VideoComments = ({ videoId, setPriorityTimestamps, setRegularTimestamps, onCommentsLoaded }) => {
   // 상태 관리
   const [comments, setComments] = useState([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const { setCurrentTimestamp } = useContext(TimestampContext);
+  // Handle potentially undefined context safely
+  const timestampContext = useContext(TimestampContext) || {};
+  const setCurrentTimestamp = timestampContext.setCurrentTimestamp || (() => console.warn('setCurrentTimestamp not available'));
   const [timestampFrequency, setTimestampFrequency] = useState({});
   const [priorityComments, setPriorityComments] = useState([]);
   const [otherComments, setOtherComments] = useState([]);
@@ -83,18 +85,39 @@ const VideoComments = ({ videoId, setTimestampSeconds, onCommentsLoaded }) => {
 
       setComments(filteredComments);
 
-      // Collect all unique timestamps in seconds
-      const allTimestamps = filteredComments.flatMap(c => c.timestamps);
-      const allTimestampsInSeconds = allTimestamps.map(timestampToSeconds);
-      const uniqueSeconds = Array.from(new Set(allTimestampsInSeconds)).sort((a, b) => a - b);
-      // Send timestamps to parent component
-      setTimestampSeconds && setTimestampSeconds(uniqueSeconds);
+      // Extract timestamps by type and send to parent
+      const priorityTimestamps = [];
+      const regularTimestamps = [];
+      
+      // Collect priority timestamps
+      priorityComments.forEach(({ comment, time }) => {
+        const seconds = timestampToSeconds(time);
+        if (!priorityTimestamps.includes(seconds)) {
+          priorityTimestamps.push(seconds);
+        }
+      });
+      
+      // Collect regular timestamps
+      otherComments.forEach(({ comment, time }) => {
+        const seconds = timestampToSeconds(time);
+        if (!regularTimestamps.includes(seconds)) {
+          regularTimestamps.push(seconds);
+        }
+      });
+      
+      // Sort and send to parent
+      setPriorityTimestamps && setPriorityTimestamps(priorityTimestamps.sort((a, b) => a - b));
+      setRegularTimestamps && setRegularTimestamps(regularTimestamps.sort((a, b) => a - b));
       
       // Notify parent that comments are loaded
       onCommentsLoaded && onCommentsLoaded(videoId);
 
       // Build frequency map for timestamps (in seconds), grouping within ±20 seconds
       const freq = {};
+      
+      // Gather all timestamps from the filtered comments for grouping
+      const allTimestamps = filteredComments.flatMap(c => c.timestamps);
+      const allTimestampsInSeconds = allTimestamps.map(timestampToSeconds);
       const sortedSeconds = [...allTimestampsInSeconds].sort((a, b) => a - b);
       // Map each timestamp to its group leader (earliest in its ±20s group)
       const groupLeaders = {};
@@ -151,7 +174,8 @@ const VideoComments = ({ videoId, setTimestampSeconds, onCommentsLoaded }) => {
     } catch (err) {
       console.error("Error fetching comments:", err);
       setError("Failed to fetch comments. Check your API key.");
-      setTimestampSeconds && setTimestampSeconds([]);
+      setPriorityTimestamps && setPriorityTimestamps([]);
+      setRegularTimestamps && setRegularTimestamps([]);
       setTimestampFrequency({});
     } finally {
       setLoading(false);
