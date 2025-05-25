@@ -1,6 +1,8 @@
 import React, { useState, createContext, useEffect, useRef } from "react";
 import "./index.css";
 
+console.log("✅ VideoInput.jsx 변경 반영됨");
+
 // 전역 상태 관리를 위한 Context 생성
 export const UrlContext = React.createContext("");
 export const TimestampContext = React.createContext({
