@@ -36,8 +36,17 @@ const VideoPlayer = ({ timestampSeconds = [] }) => {
   useEffect(() => {
     const newVideoId = getVideoId(videoUrlFromContext);
     console.log("VideoPlayer: videoUrlFromContext changed to:", videoUrlFromContext, "Parsed ID:", newVideoId);
-    setInternalVideoId(newVideoId);
-  }, [videoUrlFromContext]);
+    if (newVideoId !== internalVideoId) { // ID가 실제로 변경되었을 때만 업데이트
+        setInternalVideoId(newVideoId);
+        // ID 변경 시 플레이어 관련 상태 초기화
+        setPlayer(null);
+        setDuration(0);
+        setCurrentTime(0);
+        if (playerRef.current) {
+            playerRef.current.innerHTML = ""; // 이전 플레이어 DOM 제거
+        }
+    }
+  }, [videoUrlFromContext, internalVideoId]);
 
 
   /**
@@ -73,18 +82,20 @@ const VideoPlayer = ({ timestampSeconds = [] }) => {
 
   // YouTube IFrame API 로드 및 플레이어 초기화
   useEffect(() => {
-    let ytPlayerInstance; // 이 useEffect 스코프 내의 플레이어 인스턴스
-    let isMounted = true; // 컴포넌트 마운트 상태 추적
+    let ytPlayerInstance; 
+    let isMounted = true; 
 
     function initializePlayer() {
       if (playerRef.current && internalVideoId && window.YT && window.YT.Player) {
-        // 기존 플레이어가 있다면 파괴
-        if (player) {
-          player.destroy();
-          setPlayer(null);
-        }
-        // playerRef.current를 비워서 새 플레이어 공간 확보
-        playerRef.current.innerHTML = ''; 
+        // 기존 플레이어가 있다면 파괴 (setPlayer(null)이 useEffect 의존성으로 재실행 유발 가능성 있으므로 주의)
+        // 이 로직은 internalVideoId 변경 시 이미 처리됨.
+        // if (player) {
+        //   player.destroy();
+        //   setPlayer(null); // 상태 변경으로 재렌더링 및 이 useEffect 재실행 가능성
+        // }
+
+        // playerRef.current를 비워서 새 플레이어 공간 확보 (internalVideoId 변경 시 이미 처리)
+        // playerRef.current.innerHTML = ''; 
         const newPlayerDiv = document.createElement('div');
         playerRef.current.appendChild(newPlayerDiv);
 
@@ -92,39 +103,40 @@ const VideoPlayer = ({ timestampSeconds = [] }) => {
         ytPlayerInstance = new window.YT.Player(newPlayerDiv, {
           videoId: internalVideoId,
           playerVars: {
-            autoplay: 0, // 자동 재생 비활성화
-            controls: 1, // 기본 컨트롤 표시 (타임라인 직접 구현하므로 0으로 할 수도 있음)
-            modestbranding: 1, // YouTube 로고 최소화
-            rel: 0, // 관련 동영상 표시 안함
+            autoplay: 0, 
+            controls: 1, 
+            modestbranding: 1, 
+            rel: 0, 
           },
           events: {
             onReady: (event) => {
               if (!isMounted) return;
               console.log("VideoPlayer: Player ready. Duration:", event.target.getDuration());
+              setPlayer(event.target); // 실제 플레이어 객체를 상태에 저장
               setDuration(event.target.getDuration());
               setCurrentTime(event.target.getCurrentTime());
-              setPlayer(event.target); // 실제 플레이어 객체를 상태에 저장
             },
             onStateChange: (event) => {
               if (!isMounted) return;
-              // 필요시 플레이어 상태 변경에 따른 로직 추가
               if (event.data === window.YT.PlayerState.PLAYING) {
-                setDuration(event.target.getDuration()); // 재생 시작 시에도 duration 업데이트
+                if (event.target && typeof event.target.getDuration === 'function') {
+                    setDuration(event.target.getDuration()); 
+                }
               }
             }
           }
         });
       } else if (!internalVideoId) {
         console.log("VideoPlayer: No internalVideoId, clearing player.");
-         if (player) {
+         if (player && typeof player.destroy === 'function') { // player가 null이 아니고 destroy 함수가 있을 때만 호출
           player.destroy();
           setPlayer(null);
         }
-        if(playerRef.current) playerRef.current.innerHTML = ""; // 플레이어 공간 비우기
+        if(playerRef.current) playerRef.current.innerHTML = ""; 
       }
     }
 
-    if (internalVideoId) { // 유효한 videoId가 있을 때만 API 로드 시도
+    if (internalVideoId) { 
       if (window.YT && window.YT.Player) {
         initializePlayer();
       } else {
@@ -132,18 +144,21 @@ const VideoPlayer = ({ timestampSeconds = [] }) => {
         const tag = document.createElement('script');
         tag.src = 'https://www.youtube.com/iframe_api';
         const firstScriptTag = document.getElementsByTagName('script')[0];
-        firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+        if (firstScriptTag && firstScriptTag.parentNode) {
+            firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+        } else {
+            document.head.appendChild(tag); // fallback
+        }
         
         window.onYouTubeIframeAPIReady = () => {
           console.log("VideoPlayer: YouTube IFrame API ready.");
-          if (isMounted) { // API 로드 후 컴포넌트가 여전히 마운트 상태인지 확인
+          if (isMounted) { 
             initializePlayer();
           }
         };
       }
     } else {
-       // internalVideoId가 없으면 기존 플레이어 정리
-      if (player) {
+      if (player && typeof player.destroy === 'function') {
         player.destroy();
         setPlayer(null);
       }
@@ -152,43 +167,48 @@ const VideoPlayer = ({ timestampSeconds = [] }) => {
 
     return () => {
       isMounted = false;
-      console.log("VideoPlayer: Unmounting. Cleaning up player.");
-      // ytPlayerInstance는 이 useEffect 스코프의 변수이므로 직접 접근하여 destroy 호출
+      console.log("VideoPlayer: Unmounting or internalVideoId changed. Cleaning up player instance.");
       if (ytPlayerInstance && typeof ytPlayerInstance.destroy === 'function') {
         ytPlayerInstance.destroy();
       }
-      // 전역 콜백 정리 (필요한 경우)
-      // window.onYouTubeIframeAPIReady = null; // 다른 컴포넌트도 이 API를 사용할 수 있으므로 주의
+      // window.onYouTubeIframeAPIReady = null; // 전역 콜백은 신중히 제거
     };
   }, [internalVideoId]); // internalVideoId가 변경될 때마다 플레이어 재설정
 
   // 재생 시간 주기적 업데이트
   useEffect(() => {
     let intervalId;
-    if (player && player.getPlayerState && (player.getPlayerState() === window.YT.PlayerState.PLAYING || player.getPlayerState() === window.YT.PlayerState.PAUSED)) {
-      intervalId = setInterval(() => {
-        if (player && typeof player.getCurrentTime === 'function') {
-          const newCurrentTime = player.getCurrentTime();
-          setCurrentTime(newCurrentTime);
-          if (typeof player.getDuration === 'function') {
-             setDuration(player.getDuration());
+    if (player && player.getPlayerState && typeof player.getCurrentTime === 'function' && typeof player.getDuration === 'function') {
+      // 재생 중이거나 일시 중지 상태일 때만 인터벌 실행
+      const playerState = player.getPlayerState();
+      if (playerState === window.YT.PlayerState.PLAYING || playerState === window.YT.PlayerState.PAUSED) {
+        intervalId = setInterval(() => {
+          if (player && typeof player.getCurrentTime === 'function') { // player 객체 유효성 재확인
+            const newCurrentTime = player.getCurrentTime();
+            setCurrentTime(newCurrentTime);
+            const currentDuration = player.getDuration();
+            if (duration !== currentDuration) { // duration이 변경된 경우 업데이트
+                setDuration(currentDuration);
+            }
           }
-        }
-      }, 500); // 0.5초마다 업데이트
+        }, 500); 
+      }
     }
     return () => clearInterval(intervalId);
-  }, [player]);
+  }, [player, duration]); // player 상태가 바뀔 때마다 (새 플레이어 인스턴스) 또는 duration이 바뀔 때마다 재설정
 
   // Context의 currentTimestamp 변경 시 비디오 탐색 (seek)
   useEffect(() => {
     if (player && typeof player.seekTo === 'function' && currentTimestampFromContext) {
       const secondsToSeek = timestampStringToSeconds(currentTimestampFromContext);
-      if (!isNaN(secondsToSeek) && secondsToSeek >= 0 && secondsToSeek <= duration) {
+      if (!isNaN(secondsToSeek) && secondsToSeek >= 0 && (duration === 0 || secondsToSeek <= duration)) { // duration이 0일 때도 seek 시도 (초기 로드)
         console.log(`VideoPlayer: Seeking to ${secondsToSeek}s based on context timestamp ${currentTimestampFromContext}`);
         player.seekTo(secondsToSeek, true);
+        // seek 후 context의 타임스탬프를 초기화하여 반복적인 seek 방지 (선택적)
+        // setCurrentTimestampInContext(""); 
       }
     }
-  }, [currentTimestampFromContext, player, duration]); // duration도 의존성에 추가
+  }, [currentTimestampFromContext, player, duration, setCurrentTimestampInContext]);
 
   /**
    * 타임라인 클릭 또는 드래그 시 비디오 탐색
@@ -196,26 +216,24 @@ const VideoPlayer = ({ timestampSeconds = [] }) => {
   const handleTimelineInteraction = (e) => {
     if (!player || !duration || typeof player.seekTo !== 'function') return;
     
-    const timeline = e.currentTarget; // 이벤트가 발생한 .timeline div
+    const timeline = e.currentTarget; 
     const rect = timeline.getBoundingClientRect();
-    const clickX = e.clientX - rect.left; // 타임라인 내 클릭 X 좌표
+    const clickX = e.clientX - rect.left; 
     const timelineWidth = rect.width;
     
     let newTimeFraction = clickX / timelineWidth;
-    newTimeFraction = Math.max(0, Math.min(1, newTimeFraction)); // 0과 1 사이로 제한
+    newTimeFraction = Math.max(0, Math.min(1, newTimeFraction)); 
     
     const newPlayerTime = newTimeFraction * duration;
     
-    setCurrentTime(newPlayerTime); // UI 즉시 업데이트
-    player.seekTo(newPlayerTime, true); // 플레이어 실제 탐색
-    // Context의 타임스탬프도 업데이트하여 다른 컴포넌트와 동기화
+    setCurrentTime(newPlayerTime); 
+    player.seekTo(newPlayerTime, true); 
     if (setCurrentTimestampInContext) {
       setCurrentTimestampInContext(secondsToTimestampString(newPlayerTime));
     }
   };
 
-  // 유효한 internalVideoId가 없는 경우 메시지 표시
-  if (!internalVideoId && videoUrlFromContext) { // URL은 있는데 ID 파싱 실패
+  if (!internalVideoId && videoUrlFromContext) { 
     return (
       <div style={{ color: 'red', marginTop: '20px', padding: '10px', border: '1px solid red' }}>
         Please enter a valid YouTube URL. Could not extract Video ID from: "{videoUrlFromContext}"
@@ -223,47 +241,47 @@ const VideoPlayer = ({ timestampSeconds = [] }) => {
     );
   }
 
+
   return (
-    <div className="video-player-wrapper"> {/* 전체를 감싸는 div */}
+    <div className="video-player-wrapper"> 
       <div className="video-container">
-        {/* YouTube 플레이어가 삽입될 div */}
-        <div ref={playerRef} />
+        <div ref={playerRef} id={`youtube-player-${internalVideoId}`} /> {/* 플레이어 div에 고유 ID 부여 (선택적) */}
       </div>
       
-      {duration > 0 && ( // 비디오 로드 후 (duration > 0) 타임라인 표시
+      {duration > 0 && player && ( // player 객체가 존재하고 duration > 0일 때 타임라인 표시
         <div className="timeline-controls-container">
           <div 
             className="timeline"
-            onClick={handleTimelineInteraction} // 클릭 시
-            onMouseDown={(e) => { // 드래그 시작
+            onClick={handleTimelineInteraction} 
+            onMouseDown={(e) => { 
+              if (e.button !== 0) return; // 왼쪽 클릭만
               setIsDragging(true);
-              handleTimelineInteraction(e); // 마우스 다운 시점에서도 시간 변경 적용
+              handleTimelineInteraction(e); 
             }}
-            onMouseUp={() => setIsDragging(false)} // 드래그 종료
-            onMouseLeave={() => setIsDragging(false)} // 마우스 벗어나면 드래그 종료
-            onMouseMove={(e) => { // 드래그 중
+            onMouseUp={() => setIsDragging(false)} 
+            onMouseLeave={() => setIsDragging(false)} 
+            onMouseMove={(e) => { 
               if (isDragging) {
                 handleTimelineInteraction(e);
               }
             }}
-            style={{ cursor: 'pointer' }} // 마우스 커서 변경
+            style={{ cursor: 'pointer' }} 
           >
             <div 
               className="timeline-progress"
               style={{ width: `${(currentTime / duration) * 100}%` }}
             />
-            {/* 타임스탬프 마커들 */}
             {timestampSeconds.map((stamp, idx) => {
               const isObjectFormat = typeof stamp === 'object' && stamp !== null && typeof stamp.time === 'number';
               const timeValue = isObjectFormat ? stamp.time : (typeof stamp === 'number' ? stamp : 0);
-              const markerColor = isObjectFormat ? stamp.color : '#065fd4'; // 기본 파란색
-              const markerType = isObjectFormat ? stamp.type : 'comment'; // 기본 타입
+              const markerColor = isObjectFormat ? stamp.color : '#065fd4'; 
+              const markerType = isObjectFormat ? stamp.type : 'comment'; 
               
-              if (timeValue > duration) return null; // 비디오 길이 초과하는 마커는 표시 안 함
+              if (timeValue > duration) return null; 
 
               return (
                 <div
-                  key={`${markerType}-${idx}-${timeValue}`} // 더 고유한 키
+                  key={`${markerType}-${idx}-${timeValue.toFixed(2)}`} // toFixed로 소수점 문제 방지
                   className={`timeline-marker timeline-marker-${markerType}`}
                   style={{
                     left: `${(timeValue / duration) * 100}%`,

@@ -1,9 +1,9 @@
 // src/App.jsx
 import React, { useState, useEffect } from "react";
-import VideoComments from "./VideoComments.jsx"; // 경로 예시, 실제 경로로 수정하세요.
-import VideoInput from "./VideoInput.jsx";     // 경로 예시, 실제 경로로 수정하세요.
-import VideoPlayer from "./VideoPlayer.jsx";   // 경로 예시, 실제 경로로 수정하세요.
-import { UrlContext, TimestampContext } from "./VideoInput.jsx"; // 경로 예시, 실제 경로로 수정하세요.
+import VideoComments from "./VideoComments.jsx"; // 실제 경로로 수정하세요.
+import VideoInput from "./VideoInput.jsx";     // 실제 경로로 수정하세요.
+import VideoPlayer from "./VideoPlayer.jsx";   // 실제 경로로 수정하세요.
+import { UrlContext, TimestampContext } from "./VideoInput.jsx"; // 실제 경로로 수정하세요.
 // import "./App.css"; // App.js 관련 CSS가 있다면
 
 function App() {
@@ -126,7 +126,6 @@ function App() {
             polling = false; // 폴링 중단
           } else if (statusData.status === 'not_started') {
             console.log('Analysis not_started (reported by /api/audio-status), attempting to re-trigger POST /api/process-youtube');
-            // 재시작 시도 (이 부분은 서버 상태에 따라 반복될 수 있으므로 주의)
             try {
               const restartRes = await fetch('http://localhost:5000/api/process-youtube', {
                 method: 'POST',
@@ -146,7 +145,6 @@ function App() {
             console.log('Current status from /api/audio-status: processing...');
           } else {
             console.log(`Unknown status from /api/audio-status: ${statusData.status}. Full data: ${JSON.stringify(statusData)}`);
-            // 알 수 없는 상태는 에러로 간주하거나, 계속 폴링할 수 있음. 여기서는 일단 로그만 남김.
           }
         } catch (pollErr) {
           console.log(`Polling error for /api/audio-status: ${pollErr.message}`);
@@ -195,17 +193,20 @@ function App() {
     } else {
       console.error("App.js: Invalid YouTube URL submitted.");
       setError('Invalid YouTube URL. Please provide a valid YouTube video link.');
-      // videoUrlForContext는 ""로 유지되어 VideoPlayer에 빈 URL이 전달되도록 함
     }
   };
 
   // 댓글 또는 오디오 타임스탬프 변경 시 combinedTimestamps 업데이트
   useEffect(() => {
     const formatStamp = (timeInput, type, color) => {
-      // 시간 값이 숫자인지 확인하고, 아니면 0으로 변환
       const time = typeof timeInput === 'number' ? timeInput : parseFloat(timeInput);
       return { time: !isNaN(time) ? time : 0, type, color };
     };
+
+    // 디버깅: App.jsx가 VideoComments로부터 받은 타임스탬프 확인
+    console.log("App.js useEffect: priorityCommentTimestamps received:", priorityCommentTimestamps);
+    console.log("App.js useEffect: regularCommentTimestamps received:", regularCommentTimestamps);
+    console.log("App.js useEffect: audioTimestamps received:", audioTimestamps);
 
     const formattedPriority = priorityCommentTimestamps.map(t => formatStamp(t, 'priority', '#d47b06'));
     const formattedRegular = regularCommentTimestamps.map(t => formatStamp(t, 'comment', '#065fd4'));
@@ -213,17 +214,12 @@ function App() {
 
     let allTimestamps = [...formattedPriority, ...formattedRegular, ...formattedAudio];
     
-    // 1. 시간 순으로 정렬
     allTimestamps.sort((a, b) => a.time - b.time);
 
-    // 2. 중복 제거 (타입 우선순위 고려)
     const deduplicated = [];
-    const seenTimes = new Set(); // 이미 추가된 시간 기록 (근사치 비교용)
-    
-    // 우선순위 정의: priority > comment > audio
+    const seenTimes = new Set();
     const priorityOrder = { 'priority': 0, 'comment': 1, 'audio': 2 };
 
-    // 중복 제거 전, 동일 시간대 마커들의 우선순위를 위해 다시 정렬 (시간 -> 타입 우선순위)
     allTimestamps.sort((a, b) => {
         const timeDiff = a.time - b.time;
         if (timeDiff === 0) {
@@ -233,29 +229,13 @@ function App() {
     });
 
     allTimestamps.forEach(stamp => {
-        // 1초 이내의 타임스탬프는 중복으로 간주하고, 우선순위가 높은 것만 유지
-        let isConsideredDuplicate = false;
-        for (const existingStamp of deduplicated) {
-            if (Math.abs(existingStamp.time - stamp.time) < 1) { // 1초 이내
-                // 이미 추가된 것이 현재 것보다 우선순위가 높거나 같으면 현재 것은 중복
-                if (priorityOrder[existingStamp.type] <= priorityOrder[stamp.type]) {
-                    isConsideredDuplicate = true;
-                    break;
-                } else {
-                    // 현재 것이 우선순위가 더 높으면, 기존 것을 제거하고 현재 것을 추가해야 함
-                    // (이 로직은 복잡해지므로, 여기서는 단순히 우선순위 높은 것만 남도록 정렬 후 Set으로 필터링)
-                    // Set으로 처리하는게 더 간단. 아래 로직 수정.
-                }
-            }
-        }
-        // 위 로직보다 아래가 더 간단: 이미 정렬된 상태이므로, Set에 기록된 시간과 비교
         const isCloseToSeen = Array.from(seenTimes).some(
             existingTime => Math.abs(existingTime - stamp.time) < 1
         );
 
         if (!isCloseToSeen) {
             deduplicated.push(stamp);
-            seenTimes.add(stamp.time); // 현재 시간을 "본 시간"으로 기록
+            seenTimes.add(stamp.time);
         }
     });
     
@@ -263,21 +243,16 @@ function App() {
     setCombinedTimestamps(deduplicated);
   }, [priorityCommentTimestamps, regularCommentTimestamps, audioTimestamps]);
 
-
-
-
   return (
     <UrlContext.Provider value={videoUrlForContext}>
       <TimestampContext.Provider value={{ currentTimestamp: currentTimestampForContext, setCurrentTimestamp: setCurrentTimestampForContext }}>
         <div> {/* 최상위 div */}
           <div className="container" style={{ maxWidth: '1200px', margin: '0 auto', padding: '20px' }}>
-
-
             <VideoInput onVideoSubmit={handleVideoSubmit} />
             
             <div className="main-content" style={{ display: 'flex', flexDirection: 'row', marginTop: '20px', gap: '20px' }}>
               <div className="left-column" style={{ flex: '1 1 400px', minWidth: '300px' }}>
-                {appVideoId && ( // appVideoId는 댓글 로딩 및 오디오 분석 상태 표시에 사용
+                {appVideoId && (
                   <>
                     {error && <p style={{ color: 'red', whiteSpace: 'pre-wrap', border: '1px solid red', padding: '10px', borderRadius: '4px' }}>Error: {error}</p>}
                     
@@ -285,9 +260,9 @@ function App() {
                       videoId={appVideoId} 
                       setPriorityTimestamps={setPriorityCommentTimestamps}
                       setRegularTimestamps={setRegularCommentTimestamps}
+                      // onCommentsLoaded prop은 VideoComments에서 사용하지 않는다면 제거해도 됩니다.
+                      // onCommentsLoaded={(loadedVideoId) => console.log(`Comments loaded for ${loadedVideoId}`)} 
                     />
-                    
-
                   </>
                 )}
               </div>
@@ -297,7 +272,6 @@ function App() {
               </div>
             </div>
           </div>
-
         </div>
       </TimestampContext.Provider>
     </UrlContext.Provider>
