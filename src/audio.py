@@ -378,6 +378,16 @@ def get_youtube_most_replayed_heatmap_data(video_id: str):
                 for k in ['startMillis', 'durationMillis']: # Ensure these are strings
                     if k in highest_intensity_marker and highest_intensity_marker[k] is not None:
                         highest_intensity_marker[k] = str(highest_intensity_marker[k])
+                        
+            # Create a separate marker for the labeled Most Replayed point if it exists
+            most_replayed_label_marker = None
+            if most_replayed_label_info and 'decoration_time_millis' in most_replayed_label_info:
+                most_replayed_label_marker = {
+                    'startMillis': most_replayed_label_info['decoration_time_millis'],
+                    'durationMillis': '5000',  # Default 5 seconds duration
+                    'intensityScoreNormalized': '0.9'  # High but might not be the highest
+                }
+                print(f"[Heatmap] Created most_replayed_label_marker at {most_replayed_label_marker['startMillis']}ms for video_id: {video_id}")
             
             # It's possible to have heatmap_markers_list but not highest_intensity_marker (if all markers are invalid)
             # or not most_replayed_label_info. The original check was: if not highest_intensity_marker and not most_replayed_label_info:
@@ -387,7 +397,7 @@ def get_youtube_most_replayed_heatmap_data(video_id: str):
                 print(f"[Heatmap] Detailed Error: Heatmap markers were found, but no valid marker details or label info could be extracted for video_id: {video_id}")
                 return "Error: Heatmap data found, but key details are missing."
 
-            result = {"video_id": video_id, "most_replayed_label": most_replayed_label_info, "highest_intensity_marker_data": highest_intensity_marker}
+            result = {"video_id": video_id, "most_replayed_label": most_replayed_label_info, "most_replayed_label_marker_data": most_replayed_label_marker, "highest_intensity_marker_data": highest_intensity_marker}
             if most_replayed_label_info and 'decoration_time_millis' in most_replayed_label_info:
                  result['most_replayed_label']['formatted_time'] = format_ms_to_time_string(most_replayed_label_info['decoration_time_millis'])
             if highest_intensity_marker and 'startMillis' in highest_intensity_marker and 'durationMillis' in highest_intensity_marker:
@@ -578,6 +588,7 @@ def get_most_replayed_endpoint():
                 "status": "success",
                 "video_id": heatmap_result.get("video_id", video_id_for_heatmap), 
                 "most_replayed_label": heatmap_result.get("most_replayed_label"),
+                "most_replayed_label_marker_data": heatmap_result.get("most_replayed_label_marker_data"),
                 "highest_intensity_marker_data": heatmap_result.get("highest_intensity_marker_data")
             })
         else: 
