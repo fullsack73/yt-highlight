@@ -74,11 +74,13 @@ function App() {
         const formattedHighlights = initialData.audio_highlights.map(h => typeof h === 'number' ? h : parseFloat(h));
         setAudioTimestamps(formattedHighlights);
         // Most Replayed 데이터도 초기 응답에 포함될 수 있으므로 처리
-        if (initialData.heatmap_info && initialData.heatmap_info.status === 'success') {
-            setMostReplayedData(initialData.heatmap_info.data);
-        } else if (initialData.heatmap_info && initialData.heatmap_info.error) {
-            // 404의 경우 에러를 표시하지 않기로 했으므로, 여기서는 콘솔 로그만 남기거나 무시
-            console.log("Most replayed info error/skipped in initial response:", initialData.heatmap_info.error);
+        if (initialData.heatmap_info) { // Check if heatmap_info key exists
+            if (initialData.heatmap_info.status === 'success') {
+                console.log("Setting mostReplayedData from initial /api/process-youtube response:", initialData.heatmap_info);
+                setMostReplayedData(initialData.heatmap_info); // Set the full {status, data} object
+            } else {
+                console.log("Heatmap_info in initial response but not 'success'. Will rely on fetchMostReplayedData. Initial heatmap_info:", initialData.heatmap_info);
+            }
         }
         setIsAnalyzing(false);
         return;
@@ -115,11 +117,20 @@ function App() {
             console.log(`Received ${statusData.audio_highlights.length} audio_highlights from /api/analysis-status.`);
             const formattedHighlights = statusData.audio_highlights.map(h => typeof h === 'number' ? h : parseFloat(h));
             setAudioTimestamps(formattedHighlights);
-            // Most Replayed 데이터도 폴링 응답에 포함될 수 있으므로 처리
-            if (statusData.heatmap_info && statusData.heatmap_info.status === 'success') {
-                setMostReplayedData(statusData.heatmap_info.data);
-            } else if (statusData.heatmap_info && statusData.heatmap_info.error) {
-                console.log("Most replayed info error/skipped in polled response:", statusData.heatmap_info.error);
+            
+            // Handle heatmap_info from polling response
+            if (statusData.heatmap_info) { // If heatmap_info key exists in the response
+                if (statusData.heatmap_info.status === 'success') {
+                    console.log("Setting mostReplayedData from successful polling response heatmap_info:", statusData.heatmap_info);
+                    setMostReplayedData(statusData.heatmap_info); // Set the full {status, data} object
+                } else {
+                    // Heatmap_info is present but not 'success' (e.g., an error from heatmap processing within the BG task)
+                    // Preserve existing valid mostReplayedData rather than overwriting with an error from polling.
+                    console.log("Heatmap_info in polling response but not status:'success'. Preserving existing mostReplayedData. Polled heatmap_info:", statusData.heatmap_info);
+                }
+            } else {
+                // Heatmap_info key is NOT in the response. Preserve existing mostReplayedData.
+                console.log("No heatmap_info key in polling response, preserving existing mostReplayedData");
             }
             polling = false;
           } else if (statusData.status === 'error') {
@@ -260,10 +271,11 @@ function App() {
       return { time, type, color, label };
     };
 
-    console.log("App.js useEffect: priorityCommentTimestamps:", priorityCommentTimestamps);
-    console.log("App.js useEffect: regularCommentTimestamps:", regularCommentTimestamps);
-    console.log("App.js useEffect: audioTimestamps:", audioTimestamps);
-    console.log("App.js useEffect: mostReplayedData:", mostReplayedData);
+    console.log("App.js combinedTimestamps useEffect: Triggered.");
+    console.log("App.js combinedTimestamps useEffect: priorityCommentTimestamps:", priorityCommentTimestamps);
+    console.log("App.js combinedTimestamps useEffect: regularCommentTimestamps:", regularCommentTimestamps);
+    console.log("App.js combinedTimestamps useEffect: audioTimestamps:", audioTimestamps);
+    console.log("App.js combinedTimestamps useEffect: mostReplayedData (at start of effect):", JSON.parse(JSON.stringify(mostReplayedData || {})));
 
     const formattedPriority = priorityCommentTimestamps.map(t => formatStamp(t, 'priority', '#d47b06'));
     const formattedRegular = regularCommentTimestamps.map(t => formatStamp(t, 'comment', '#065fd4'));
@@ -271,11 +283,17 @@ function App() {
 
     let allTimestamps = [...formattedPriority, ...formattedRegular, ...formattedAudio].filter(stamp => stamp !== null);
 
-    if (mostReplayedData && mostReplayedData.status === 'success' && mostReplayedData.highest_intensity_marker_data) {
-      const mrData = mostReplayedData.highest_intensity_marker_data;
-      const mrLabel = mostReplayedData.most_replayed_label;
+    if (mostReplayedData && mostReplayedData.status === 'success' && mostReplayedData.data) {
+      console.log("App.js combinedTimestamps useEffect: Processing mostReplayedData.");
+      const mrData = mostReplayedData.data.highest_intensity_marker_data;
+      const mrLabel = mostReplayedData.data.most_replayed_label;
+      
+      console.log("App.js combinedTimestamps useEffect: mrData.startMillis:", mrData ? mrData.startMillis : 'mrData is null');
+
       if (mrData && mrData.startMillis) { // Ensure mrData and startMillis exist
         const startTimeSeconds = parseFloat(mrData.startMillis) / 1000;
+        console.log("App.js combinedTimestamps useEffect: Parsed most replayed startTimeSeconds:", startTimeSeconds);
+
         if (!isNaN(startTimeSeconds)) {
           const mostReplayedStamp = formatStamp(
             startTimeSeconds,
@@ -283,12 +301,21 @@ function App() {
             '#800080', // Purple color for most replayed
             mrLabel ? mrLabel.label_text : 'Most Replayed' // Add label for tooltip
           );
+          console.log("App.js combinedTimestamps useEffect: Formatted mostReplayedStamp:", mostReplayedStamp);
           if (mostReplayedStamp) {
             allTimestamps.push(mostReplayedStamp);
           }
+        } else {
+          console.warn("App.js combinedTimestamps useEffect: mostReplayed startTimeSeconds is NaN after parsing.");
         }
+      } else {
+        console.warn("App.js combinedTimestamps useEffect: mrData or mrData.startMillis is missing for mostReplayedData.");
       }
+    } else {
+      console.log("App.js combinedTimestamps useEffect: Condition for processing mostReplayedData not met. Data:", JSON.parse(JSON.stringify(mostReplayedData || {})));
     }
+
+    console.log("App.js combinedTimestamps useEffect: All timestamps BEFORE sorting & deduplication:", allTimestamps.map(t => ({...t})));
 
     // 시간순 정렬 및 우선순위 정렬
     const priorityOrder = { 'priority': 0, 'mostReplayed': 1, 'comment': 2, 'audio': 3 };
@@ -317,7 +344,7 @@ function App() {
         }
     });
 
-    console.log("App.js: Combined timestamps updated:", deduplicated);
+    console.log("App.js combinedTimestamps useEffect: Final combined timestamps (deduplicated):", deduplicated.map(t => ({...t})));
     setCombinedTimestamps(deduplicated);
   }, [priorityCommentTimestamps, regularCommentTimestamps, audioTimestamps, mostReplayedData]);
 
@@ -328,41 +355,6 @@ function App() {
           <div className="container" style={{ maxWidth: '1200px', margin: '0 auto', padding: '20px' }}>
             <VideoInput onVideoSubmit={handleVideoSubmit} />
             
-            {/* Most Replayed 정보 표시 영역 (예시) */}
-            {isFetchingMostReplayed && <p>가장 많이 다시 본 구간 정보 로딩 중...</p>}
-            {mostReplayedError && <p style={{ color: 'orange' }}>Most Replayed 정보 오류: {mostReplayedError}</p>}
-            {mostReplayedData && mostReplayedData.status === 'success' && (
-              <div style={{ margin: '10px 0', padding: '10px', border: '1px solid #eee', borderRadius: '4px' }}>
-                <h4>가장 많이 다시 본 구간 정보:</h4>
-                {mostReplayedData.most_replayed_label && (
-                  <p>
-                    레이블: {mostReplayedData.most_replayed_label.label_text} (
-                    {mostReplayedData.most_replayed_label.formatted_time || 
-                     (mostReplayedData.most_replayed_label.decoration_time_millis ? `${Math.round(parseInt(mostReplayedData.most_replayed_label.decoration_time_millis)/1000)}s` : 'N/A')}
-                    )
-                  </p>
-                )}
-                {mostReplayedData.highest_intensity_marker_data && (
-                  <p>
-                    최고 강도 구간 시작: {mostReplayedData.highest_intensity_marker_data.formatted_start_time || 
-                                      (mostReplayedData.highest_intensity_marker_data.startMillis ? `${Math.round(parseInt(mostReplayedData.highest_intensity_marker_data.startMillis)/1000)}s` : 'N/A')}
-                  </p>
-                )}
-                {!mostReplayedData.most_replayed_label && !mostReplayedData.highest_intensity_marker_data && (
-                    <p>세부적인 "Most Replayed" 정보가 없습니다.</p>
-                )}
-              </div>
-            )}
-            {/* Most Replayed 데이터가 있지만 success가 아닌 경우 (예: API가 error를 반환했으나 UI에 표시하지 않기로 한 경우) */}
-            {/* 또는 아예 데이터가 없는 경우 (fetchMostReplayedData에서 null로 설정된 경우) */}
-            {/* 이 부분은 사용자의 요구사항에 따라 메시지를 다르게 표시할 수 있습니다. */}
-            {!isFetchingMostReplayed && !mostReplayedError && (!mostReplayedData || mostReplayedData.status !== 'success') && appVideoId && (
-                 <p style={{ margin: '10px 0', padding: '10px', border: '1px solid #eee', borderRadius: '4px' }}>
-                    "가장 많이 다시 본 구간" 정보를 찾을 수 없거나 가져오는 데 실패했습니다.
-                 </p>
-            )}
-
-
             {isAnalyzing && <p>전체 하이라이트 분석 중... (오디오 및 댓글)</p>}
             {error && <p style={{ color: 'red', whiteSpace: 'pre-wrap', border: '1px solid red', padding: '10px', borderRadius: '4px' }}>전체 분석 오류: {error}</p>}
             
@@ -370,12 +362,44 @@ function App() {
               <div className="left-column" style={{ flex: '1 1 400px', minWidth: '300px' }}>
                 {appVideoId && (
                   <>
-                    {/* 에러 메시지는 상단으로 옮겨서 isAnalyzing과 함께 표시 */}
                     <VideoComments
                       videoId={appVideoId}
                       setPriorityTimestamps={setPriorityCommentTimestamps}
                       setRegularTimestamps={setRegularCommentTimestamps}
                     />
+                    {/* Most Replayed 정보 표시 영역 (예시) */}
+                    {isFetchingMostReplayed && <p>가장 많이 다시 본 구간 정보 로딩 중...</p>}
+                    {mostReplayedError && <p style={{ color: 'orange' }}>Most Replayed 정보 오류: {mostReplayedError}</p>}
+                    {mostReplayedData && mostReplayedData.status === 'success' && (
+                      <div style={{ margin: '10px 0', padding: '10px', border: '1px solid #eee', borderRadius: '4px' }}>
+                        <h4>가장 많이 다시 본 구간 정보:</h4>
+                        {mostReplayedData.most_replayed_label && (
+                          <p>
+                            레이블: {mostReplayedData.most_replayed_label.label_text} (
+                            {mostReplayedData.most_replayed_label.formatted_time || 
+                             (mostReplayedData.most_replayed_label.decoration_time_millis ? `${Math.round(parseInt(mostReplayedData.most_replayed_label.decoration_time_millis)/1000)}s` : 'N/A')}
+                            )
+                          </p>
+                        )}
+                        {mostReplayedData.highest_intensity_marker_data && (
+                          <p>
+                            최고 강도 구간 시작: {mostReplayedData.highest_intensity_marker_data.formatted_start_time || 
+                                              (mostReplayedData.highest_intensity_marker_data.startMillis ? `${Math.round(parseInt(mostReplayedData.highest_intensity_marker_data.startMillis)/1000)}s` : 'N/A')}
+                          </p>
+                        )}
+                        {!mostReplayedData.most_replayed_label && !mostReplayedData.highest_intensity_marker_data && (
+                            <p>세부적인 "Most Replayed" 정보가 없습니다.</p>
+                        )}
+                      </div>
+                    )}
+                    {/* Most Replayed 데이터가 있지만 success가 아닌 경우 (예: API가 error를 반환했으나 UI에 표시하지 않기로 한 경우) */}
+                    {/* 또는 아예 데이터가 없는 경우 (fetchMostReplayedData에서 null로 설정된 경우) */}
+                    {/* 이 부분은 사용자의 요구사항에 따라 메시지를 다르게 표시할 수 있습니다. */}
+                    {!isFetchingMostReplayed && !mostReplayedError && (!mostReplayedData || mostReplayedData.status !== 'success') && appVideoId && (
+                         <p style={{ margin: '10px 0', padding: '10px', border: '1px solid #eee', borderRadius: '4px' }}>
+                            "가장 많이 다시 본 구간" 정보를 찾을 수 없거나 가져오는 데 실패했습니다.
+                         </p>
+                    )}
                   </>
                 )}
               </div>
