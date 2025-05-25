@@ -256,7 +256,8 @@ function App() {
   useEffect(() => {
     const formatStamp = (timeInput, type, color, label = null) => {
       const time = typeof timeInput === 'number' ? timeInput : parseFloat(timeInput);
-      return { time: !isNaN(time) ? time : 0, type, color, label };
+      if (isNaN(time)) return null;
+      return { time, type, color, label };
     };
 
     console.log("App.js useEffect: priorityCommentTimestamps:", priorityCommentTimestamps);
@@ -266,24 +267,25 @@ function App() {
 
     const formattedPriority = priorityCommentTimestamps.map(t => formatStamp(t, 'priority', '#d47b06'));
     const formattedRegular = regularCommentTimestamps.map(t => formatStamp(t, 'comment', '#065fd4'));
-    const formattedAudio = audioTimestamps.map(t => formatStamp(t, 'audio', '#34a853'));
+    const formattedAudio = audioTimestamps.map(t => formatStamp(t, 'audio', '#2ca02c'));
 
-    let allTimestamps = [...formattedPriority, ...formattedRegular, ...formattedAudio];
+    let allTimestamps = [...formattedPriority, ...formattedRegular, ...formattedAudio].filter(stamp => stamp !== null);
 
     if (mostReplayedData && mostReplayedData.status === 'success' && mostReplayedData.highest_intensity_marker_data) {
       const mrData = mostReplayedData.highest_intensity_marker_data;
       const mrLabel = mostReplayedData.most_replayed_label;
-      if (mrData.startMillis) { // startMillis가 있는지 확인
+      if (mrData && mrData.startMillis) { // Ensure mrData and startMillis exist
         const startTimeSeconds = parseFloat(mrData.startMillis) / 1000;
         if (!isNaN(startTimeSeconds)) {
-          allTimestamps.push(
-            formatStamp(
-              startTimeSeconds,
-              'mostReplayed',
-              '#800080',
-              mrLabel ? mrLabel.label_text : 'Most Replayed'
-            )
+          const mostReplayedStamp = formatStamp(
+            startTimeSeconds,
+            'mostReplayed',
+            '#800080', // Purple color for most replayed
+            mrLabel ? mrLabel.label_text : 'Most Replayed' // Add label for tooltip
           );
+          if (mostReplayedStamp) {
+            allTimestamps.push(mostReplayedStamp);
+          }
         }
       }
     }
@@ -292,7 +294,7 @@ function App() {
     const priorityOrder = { 'priority': 0, 'mostReplayed': 1, 'comment': 2, 'audio': 3 };
     allTimestamps.sort((a, b) => {
         const timeDiff = a.time - b.time;
-        if (Math.abs(timeDiff) < 0.1) {
+        if (Math.abs(timeDiff) < 0.1) { // Consider times within 0.1s as same for priority sorting
             return priorityOrder[a.type] - priorityOrder[b.type];
         }
         return timeDiff;
@@ -303,13 +305,15 @@ function App() {
     const seenTimes = new Set();
     allTimestamps.forEach(stamp => {
         const isCloseToSeen = Array.from(seenTimes).some(
-            existingTime => Math.abs(existingTime - stamp.time) < 1
+            existingTime => Math.abs(existingTime - stamp.time) < 1 // Keep 1s deduplication window
         );
+
         if (!isCloseToSeen) {
             deduplicated.push(stamp);
             seenTimes.add(stamp.time);
         } else {
-            console.log(`Deduplicating stamp: ${stamp.type} at ${stamp.time}s`);
+            // Optional: Log deduplicated stamps if needed for debugging
+            // console.log(`Deduplicating stamp: ${stamp.type} at ${stamp.time}s due to proximity to a seen time.`);
         }
     });
 
