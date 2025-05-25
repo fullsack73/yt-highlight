@@ -222,21 +222,12 @@ const VideoPlayer = ({ timestampSeconds = [] }) => {
       </div>
     );
   }
-  
-  if (!videoUrlFromContext) { // 아직 URL이 입력되지 않은 초기 상태
-     return (
-      <div style={{ marginTop: '20px', padding: '10px', color: '#777' }}>
-        Enter a YouTube URL in the input field above to load the video.
-      </div>
-    );
-  }
-
 
   return (
     <div className="video-player-wrapper"> {/* 전체를 감싸는 div */}
       <div className="video-container">
         {/* YouTube 플레이어가 삽입될 div */}
-        <div ref={playerRef} id="yt-player-iframe-container" style={{ width: '100%', aspectRatio: '16/9', backgroundColor: '#000' }} />
+        <div ref={playerRef} />
       </div>
       
       {duration > 0 && ( // 비디오 로드 후 (duration > 0) 타임라인 표시
