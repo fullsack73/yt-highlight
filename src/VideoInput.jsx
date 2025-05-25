@@ -92,11 +92,6 @@ const VideoInput = ({ onVideoSubmit, children }) => {
           if (data.status === 'success') {
             console.log('Highlights:', data.highlights);
             // UI is already loaded, so we can just show a success message
-            setError(
-              <div className="success-message">
-                <p>✅ Audio analysis complete! Highlights have been added to the timeline.</p>
-              </div>
-            );
           } else if (data.status === 'processing') {
             // Show that processing is happening in the background
             setError(

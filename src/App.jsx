@@ -285,31 +285,52 @@ function App() {
 
     if (mostReplayedData && mostReplayedData.status === 'success' && mostReplayedData.data) {
       console.log("App.js combinedTimestamps useEffect: Processing mostReplayedData.");
-      const mrData = mostReplayedData.data.highest_intensity_marker_data;
+      const highestIntensityMarker = mostReplayedData.data.highest_intensity_marker_data;
       const mrLabel = mostReplayedData.data.most_replayed_label;
+      const mostReplayedLabelMarker = mostReplayedData.data.most_replayed_label_marker_data;
       
-      console.log("App.js combinedTimestamps useEffect: mrData.startMillis:", mrData ? mrData.startMillis : 'mrData is null');
+      // Process highest intensity marker
+      if (highestIntensityMarker && highestIntensityMarker.startMillis) {
+        const highestIntensitySeconds = parseFloat(highestIntensityMarker.startMillis) / 1000;
+        console.log("App.js combinedTimestamps useEffect: Parsed highest intensity startTimeSeconds:", highestIntensitySeconds);
 
-      if (mrData && mrData.startMillis) { // Ensure mrData and startMillis exist
-        const startTimeSeconds = parseFloat(mrData.startMillis) / 1000;
-        console.log("App.js combinedTimestamps useEffect: Parsed most replayed startTimeSeconds:", startTimeSeconds);
+        if (!isNaN(highestIntensitySeconds)) {
+          const highestIntensityStamp = formatStamp(
+            highestIntensitySeconds,
+            'mostReplayed',
+            '#800080', // Purple color for most replayed
+            'Highest Intensity' // Label for tooltip
+          );
+          console.log("App.js combinedTimestamps useEffect: Formatted highestIntensityStamp:", highestIntensityStamp);
+          if (highestIntensityStamp) {
+            allTimestamps.push(highestIntensityStamp);
+          }
+        }
+      }
+      
+      // Process most replayed label marker (the point YouTube actually labels as "Most Replayed")
+      if (mostReplayedLabelMarker && mostReplayedLabelMarker.startMillis) {
+        const labelMarkerSeconds = parseFloat(mostReplayedLabelMarker.startMillis) / 1000;
+        console.log("App.js combinedTimestamps useEffect: Parsed most replayed label startTimeSeconds:", labelMarkerSeconds);
 
-        if (!isNaN(startTimeSeconds)) {
-          const mostReplayedStamp = formatStamp(
-            startTimeSeconds,
+        if (!isNaN(labelMarkerSeconds)) {
+          const labelMarkerStamp = formatStamp(
+            labelMarkerSeconds,
             'mostReplayed',
             '#800080', // Purple color for most replayed
             mrLabel ? mrLabel.label_text : 'Most Replayed' // Add label for tooltip
           );
-          console.log("App.js combinedTimestamps useEffect: Formatted mostReplayedStamp:", mostReplayedStamp);
-          if (mostReplayedStamp) {
-            allTimestamps.push(mostReplayedStamp);
+          console.log("App.js combinedTimestamps useEffect: Formatted labelMarkerStamp:", labelMarkerStamp);
+          if (labelMarkerStamp) {
+            allTimestamps.push(labelMarkerStamp);
           }
-        } else {
-          console.warn("App.js combinedTimestamps useEffect: mostReplayed startTimeSeconds is NaN after parsing.");
         }
-      } else {
-        console.warn("App.js combinedTimestamps useEffect: mrData or mrData.startMillis is missing for mostReplayedData.");
+      }
+      
+      // Log if neither marker is available
+      if ((!highestIntensityMarker || !highestIntensityMarker.startMillis) && 
+          (!mostReplayedLabelMarker || !mostReplayedLabelMarker.startMillis)) {
+        console.warn("App.js combinedTimestamps useEffect: Both marker types are missing or invalid in mostReplayedData.");
       }
     } else {
       console.log("App.js combinedTimestamps useEffect: Condition for processing mostReplayedData not met. Data:", JSON.parse(JSON.stringify(mostReplayedData || {})));
@@ -355,7 +376,7 @@ function App() {
           <div className="container" style={{ maxWidth: '1200px', margin: '0 auto', padding: '20px' }}>
             <VideoInput onVideoSubmit={handleVideoSubmit} />
             
-            {isAnalyzing && <p>전체 하이라이트 분석 중... (오디오 및 댓글)</p>}
+            {isAnalyzing && <p>히트맵 및 오디오 분석 중...</p>}
             {error && <p style={{ color: 'red', whiteSpace: 'pre-wrap', border: '1px solid red', padding: '10px', borderRadius: '4px' }}>전체 분석 오류: {error}</p>}
             
             <div className="main-content" style={{ display: 'flex', flexDirection: 'row', marginTop: '20px', gap: '20px' }}>
@@ -367,39 +388,6 @@ function App() {
                       setPriorityTimestamps={setPriorityCommentTimestamps}
                       setRegularTimestamps={setRegularCommentTimestamps}
                     />
-                    {/* Most Replayed 정보 표시 영역 (예시) */}
-                    {isFetchingMostReplayed && <p>가장 많이 다시 본 구간 정보 로딩 중...</p>}
-                    {mostReplayedError && <p style={{ color: 'orange' }}>Most Replayed 정보 오류: {mostReplayedError}</p>}
-                    {mostReplayedData && mostReplayedData.status === 'success' && (
-                      <div style={{ margin: '10px 0', padding: '10px', border: '1px solid #eee', borderRadius: '4px' }}>
-                        <h4>가장 많이 다시 본 구간 정보:</h4>
-                        {mostReplayedData.most_replayed_label && (
-                          <p>
-                            레이블: {mostReplayedData.most_replayed_label.label_text} (
-                            {mostReplayedData.most_replayed_label.formatted_time || 
-                             (mostReplayedData.most_replayed_label.decoration_time_millis ? `${Math.round(parseInt(mostReplayedData.most_replayed_label.decoration_time_millis)/1000)}s` : 'N/A')}
-                            )
-                          </p>
-                        )}
-                        {mostReplayedData.highest_intensity_marker_data && (
-                          <p>
-                            최고 강도 구간 시작: {mostReplayedData.highest_intensity_marker_data.formatted_start_time || 
-                                              (mostReplayedData.highest_intensity_marker_data.startMillis ? `${Math.round(parseInt(mostReplayedData.highest_intensity_marker_data.startMillis)/1000)}s` : 'N/A')}
-                          </p>
-                        )}
-                        {!mostReplayedData.most_replayed_label && !mostReplayedData.highest_intensity_marker_data && (
-                            <p>세부적인 "Most Replayed" 정보가 없습니다.</p>
-                        )}
-                      </div>
-                    )}
-                    {/* Most Replayed 데이터가 있지만 success가 아닌 경우 (예: API가 error를 반환했으나 UI에 표시하지 않기로 한 경우) */}
-                    {/* 또는 아예 데이터가 없는 경우 (fetchMostReplayedData에서 null로 설정된 경우) */}
-                    {/* 이 부분은 사용자의 요구사항에 따라 메시지를 다르게 표시할 수 있습니다. */}
-                    {!isFetchingMostReplayed && !mostReplayedError && (!mostReplayedData || mostReplayedData.status !== 'success') && appVideoId && (
-                         <p style={{ margin: '10px 0', padding: '10px', border: '1px solid #eee', borderRadius: '4px' }}>
-                            "가장 많이 다시 본 구간" 정보를 찾을 수 없거나 가져오는 데 실패했습니다.
-                         </p>
-                    )}
                   </>
                 )}
               </div>
