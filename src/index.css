@@ -154,7 +154,7 @@ body {
   /* Video Container */
   .video-container {
     width: 100%;
-    max-width: 800px;
+    max-width: 640px;
     margin: 0 auto;
   }
 
@@ -179,9 +179,18 @@ body {
     margin-top: 10px;
     padding: 0 10px;
     width: 100%;
-    max-width: 800px;
+    max-width: 640px;
     margin-left: auto;
     margin-right: auto;
+    box-sizing: border-box;
+  }
+
+  .timeline-controls-container {
+    width: 100%;
+    max-width: 640px; /* Match .video-container for width alignment */
+    margin-left: auto;
+    margin-right: auto;
+    margin-top: 10px; /* Space below the video player */
     box-sizing: border-box;
   }
 
