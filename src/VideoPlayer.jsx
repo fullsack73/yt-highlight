@@ -6,7 +6,7 @@ import "./index.css"; // VideoPlayer 관련 CSS가 있다면
 /**
  * YouTube 비디오 플레이어 컴포넌트
  */
-const VideoPlayer = ({ timestampSeconds = [] }) => {
+const VideoPlayer = ({ timestampSeconds = [], mostReplayedRawData = null }) => {
   // Context에서 URL 및 타임스탬프 관련 값 가져오기
   const videoUrlFromContext = useContext(UrlContext) || "";
   
@@ -276,6 +276,7 @@ const VideoPlayer = ({ timestampSeconds = [] }) => {
               const timeValue = isObjectFormat ? stamp.time : (typeof stamp === 'number' ? stamp : 0);
               const markerColor = isObjectFormat ? stamp.color : '#065fd4'; 
               const markerType = isObjectFormat ? stamp.type : 'comment'; 
+              const markerLabel = (isObjectFormat && stamp.label) ? stamp.label : (markerType.charAt(0).toUpperCase() + markerType.slice(1));
               
               if (timeValue > duration) return null; 
 
@@ -287,7 +288,7 @@ const VideoPlayer = ({ timestampSeconds = [] }) => {
                     left: `${(timeValue / duration) * 100}%`,
                     backgroundColor: markerColor,
                   }}
-                  title={`${markerType.charAt(0).toUpperCase() + markerType.slice(1)} at ${secondsToTimestampString(timeValue)}`}
+                  title={`${markerLabel} at ${secondsToTimestampString(timeValue)}`}
                 />
               );
             })}

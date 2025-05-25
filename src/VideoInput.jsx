@@ -231,68 +231,6 @@ const VideoInput = ({ onVideoSubmit, children }) => {
       setError(`Retry failed: ${error.message}`);
     });
   };
-  
-  // Function to check processing status
-  const checkStatus = (url, interval) => {
-    fetch('http://localhost:5000/api/check-status', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      credentials: 'omit',
-      mode: 'cors',
-      body: JSON.stringify({ youtube_url: url }),
-    })
-    .then(response => response.json())
-    .then(data => {
-      if (data.status === 'success') {
-        clearInterval(interval);
-        // Don't call onVideoSubmit again - the player is already showing
-        // Just update the status message
-        setError(
-          <div className="success-message">
-            <p>✅ Audio analysis complete! {data.highlights?.length || 0} highlights added to the timeline.</p>
-          </div>
-        );
-        
-        // Dispatch an event to notify other components that highlights are ready
-        const event = new CustomEvent('highlightsReady', { detail: data.highlights });
-        window.dispatchEvent(event);
-        
-        // Auto-hide success message after 5 seconds
-        setTimeout(() => setError(null), 5000);
-      } else if (data.status === 'error') {
-        clearInterval(interval);
-        setError(
-          <div className="error-message">
-            <p>⚠️ Audio analysis error: {data.error}</p>
-            <p>Video will play, but highlights may be limited.</p>
-            <button onClick={() => retryWithFallback(url)} className="retry-button">
-              Retry Analysis
-            </button>
-          </div>
-        );
-      } else if (data.status === 'processing') {
-        // Update the processing message with more details
-        setError(
-          <div className="processing-message">
-            <p>🔄 Audio analysis running in background... This may take a minute.</p>
-          </div>
-        );
-      }
-    })
-    .catch(error => {
-      clearInterval(interval);
-      setError(
-        <div className="error-message">
-          <p>⚠️ Status check failed: {error.message}</p>
-          <button onClick={() => retryWithFallback(url)} className="retry-button">
-            Retry Analysis
-          </button>
-        </div>
-      );
-    });
-  };
 
   return (
     // Context Provider로 자식 컴포넌트들에게 상태 제공
