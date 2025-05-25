@@ -40,14 +40,6 @@ const VideoInput = ({ onVideoSubmit, children }) => {
       clearTimeout(debounceTimeout.current);
     }
     if (!videoUrl) return;
-    const urlParams = new URLSearchParams(window.location.search);
-    const videoUrlParam = urlParams.get('videoUrl');
-  
-    if (videoUrlParam) {
-      const decodedUrl = decodeURIComponent(videoUrlParam);
-      console.log('URL 파라미터에서 비디오 URL 발견:', decodedUrl);
-      setVideoUrl(decodedUrl);
-    }
     debounceTimeout.current = setTimeout(() => {
       const videoId = extractVideoId(videoUrl);
       if (videoId) {
