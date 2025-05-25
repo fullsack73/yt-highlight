@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext } from 'react'; // React import 추가
 import axios from 'axios';
 import { TimestampContext } from "./VideoInput.jsx";
 import "./index.css";
@@ -16,19 +16,23 @@ const timestampRegex = /\b(?:\d+:)?\d{1,2}:\d{2}\b/g;
  */
 const VideoComments = ({ videoId, setPriorityTimestamps, setRegularTimestamps, onCommentsLoaded }) => {
   // 상태 관리
-  const [comments, setComments] = useState([]);
+  const [comments, setComments] = useState([]); // UI 표시용 전체 필터링된 댓글
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  // Handle potentially undefined context safely
+  
   const timestampContext = useContext(TimestampContext) || {};
-  const setCurrentTimestamp = timestampContext.setCurrentTimestamp || (() => console.warn('setCurrentTimestamp not available'));
+  const setCurrentTimestamp = timestampContext.setCurrentTimestamp || (() => console.warn('setCurrentTimestamp not available in VideoComments'));
+  
   const [timestampFrequency, setTimestampFrequency] = useState({});
-  const [priorityComments, setPriorityComments] = useState([]);
-  const [otherComments, setOtherComments] = useState([]);
+  const [priorityComments, setPriorityComments] = useState([]); // UI 표시용 우선순위 댓글
+  const [otherComments, setOtherComments] = useState([]);     // UI 표시용 기타 댓글
 
   // Helper: Convert timestamp string to seconds
   const timestampToSeconds = (timestamp) => {
+    if (!timestamp || typeof timestamp !== 'string') return 0;
     const parts = timestamp.split(":").map(Number);
+    if (parts.some(isNaN)) return 0;
+
     if (parts.length === 2) {
       return parts[0] * 60 + parts[1];
     } else if (parts.length === 3) {
@@ -39,17 +43,22 @@ const VideoComments = ({ videoId, setPriorityTimestamps, setRegularTimestamps, o
 
   /**
    * YouTube API를 사용하여 댓글 가져오기
-   * - 페이지네이션 처리
-   * - 타임스탬프가 포함된 댓글만 필터링
-   * - 좋아요 수가 20개 이상인 댓글만 표시
    */
   const fetchComments = async () => {
     setLoading(true);
-    let allComments = [];
+    setError(""); // 이전 에러 초기화
+    setComments([]);
+    setPriorityComments([]);
+    setOtherComments([]);
+    setTimestampFrequency({});
+    // 부모 컴포넌트의 타임스탬프도 초기화
+    setPriorityTimestamps && setPriorityTimestamps([]);
+    setRegularTimestamps && setRegularTimestamps([]);
+
+    let allFetchedCommentItems = [];
     let nextPageToken = null;
 
     try {
-      // 모든 페이지의 댓글을 가져올 때까지 반복
       do {
         const response = await axios.get(
           `https://www.googleapis.com/youtube/v3/commentThreads`,
@@ -58,125 +67,120 @@ const VideoComments = ({ videoId, setPriorityTimestamps, setRegularTimestamps, o
               key: API_KEY,
               videoId: videoId,
               part: "snippet",
-              maxResults: 100,
-              order: "relevance",
+              maxResults: 100, // API 최대치
+              order: "relevance", // 관련성 높은 댓글 우선
               pageToken: nextPageToken,
             },
           }
         );
-
-        allComments = allComments.concat(response.data.items);
+        allFetchedCommentItems = allFetchedCommentItems.concat(response.data.items);
         nextPageToken = response.data.nextPageToken;
       } while (nextPageToken);
 
-      // 댓글 필터링 및 가공
-      const filteredComments = allComments
+      const filteredComments = allFetchedCommentItems
         .map((item) => {
-          const text = item.snippet.topLevelComment.snippet.textDisplay;
+          const topLevelComment = item.snippet.topLevelComment;
+          if (!topLevelComment) return null; // topLevelComment가 없는 경우 방지
+
+          const text = topLevelComment.snippet.textDisplay;
           const timestamps = text.match(timestampRegex) || [];
-          const likeCount = item.snippet.topLevelComment.snippet.likeCount || 0;
+          const likeCount = topLevelComment.snippet.likeCount || 0;
           return {
+            id: topLevelComment.id, // 댓글 고유 ID
             text,
             likeCount,
             timestamps,
           };
         })
-        .filter((comment) => comment.timestamps.length > 0 && comment.likeCount > 20);
+        .filter((comment) => comment && comment.timestamps.length > 0 && comment.likeCount > 20); // 좋아요 20개 초과
 
-      setComments(filteredComments);
+      // 타임스탬프 빈도수 계산 (±20초 그룹화)
+      const allTimestampsFromFiltered = filteredComments.flatMap(c => c.timestamps);
+      const allTimestampsInSeconds = allTimestampsFromFiltered.map(timestampToSeconds);
+      const sortedSeconds = [...new Set(allTimestampsInSeconds)].sort((a, b) => a - b); // 중복 제거 후 정렬
 
-      // Extract timestamps by type and send to parent
-      const priorityTimestamps = [];
-      const regularTimestamps = [];
-      
-      // Collect priority timestamps
-      priorityComments.forEach(({ comment, time }) => {
-        const seconds = timestampToSeconds(time);
-        if (!priorityTimestamps.includes(seconds)) {
-          priorityTimestamps.push(seconds);
-        }
-      });
-      
-      // Collect regular timestamps
-      otherComments.forEach(({ comment, time }) => {
-        const seconds = timestampToSeconds(time);
-        if (!regularTimestamps.includes(seconds)) {
-          regularTimestamps.push(seconds);
-        }
-      });
-      
-      // Sort and send to parent
-      setPriorityTimestamps && setPriorityTimestamps(priorityTimestamps.sort((a, b) => a - b));
-      setRegularTimestamps && setRegularTimestamps(regularTimestamps.sort((a, b) => a - b));
-      
-      // Notify parent that comments are loaded
-      onCommentsLoaded && onCommentsLoaded(videoId);
+      const groupLeaders = {}; // 각 초가 속한 그룹의 대표 초
+      const groupCounts = {};  // 각 대표 초를 기준으로 한 그룹의 크기
 
-      // Build frequency map for timestamps (in seconds), grouping within ±20 seconds
-      const freq = {};
-      
-      // Gather all timestamps from the filtered comments for grouping
-      const allTimestamps = filteredComments.flatMap(c => c.timestamps);
-      const allTimestampsInSeconds = allTimestamps.map(timestampToSeconds);
-      const sortedSeconds = [...allTimestampsInSeconds].sort((a, b) => a - b);
-      // Map each timestamp to its group leader (earliest in its ±20s group)
-      const groupLeaders = {};
-      for (let i = 0; i < sortedSeconds.length; i++) {
-        const sec = sortedSeconds[i];
-        // Find the earliest timestamp within ±20s
+      for (const sec of sortedSeconds) {
         let leader = sec;
-        for (let j = 0; j < sortedSeconds.length; j++) {
-          if (Math.abs(sortedSeconds[j] - sec) <= 20 && sortedSeconds[j] < leader) {
-            leader = sortedSeconds[j];
-          }
+        // 이미 그룹화된 리더를 찾거나, 자신보다 작은 값 중 20초 이내 가장 작은 값을 리더로 설정
+        for (const existingLeaderSec of Object.keys(groupLeaders).map(Number)) {
+            if (Math.abs(existingLeaderSec - sec) <= 20 && existingLeaderSec < leader) {
+                leader = existingLeaderSec;
+            }
         }
-        groupLeaders[sec] = leader;
-      }
-      // Count group sizes
-      const groupCounts = {};
-      Object.values(groupLeaders).forEach(leader => {
+        groupLeaders[sec] = leader; // 현재 초(sec)의 리더는 leader
         groupCounts[leader] = (groupCounts[leader] || 0) + 1;
-      });
-      setTimestampFrequency(prev => ({ ...groupCounts, _groupLeaders: groupLeaders }));
+      }
+      setTimestampFrequency({ ...groupCounts, _groupLeaders: groupLeaders });
 
-      // Build priority and other comments
-      // Map: leader timestamp (seconds) -> { comment, timestamp }
-      const leaderToPriority = {};
-      // Set to track which comment/timestamp pairs are used as priority
-      const usedCommentTimestamp = new Set();
-      filteredComments.forEach((comment, commentIdx) => {
+
+      // 우선순위 댓글과 기타 댓글 분류
+      const leaderToPriorityComment = {}; // 각 그룹 리더별 최고 좋아요 댓글 정보
+      const usedAsPriority = new Set();   // 우선순위 댓글로 사용된 (댓글ID_타임스탬프) 조합
+
+      filteredComments.forEach((comment) => {
         comment.timestamps.forEach((time) => {
           const sec = timestampToSeconds(time);
-          const leader = groupLeaders[sec] !== undefined ? groupLeaders[sec] : sec;
-          // Only consider as priority if this is the leader and group is frequent
-          if (sec === leader && groupCounts[leader] > 1 && !leaderToPriority[leader]) {
-            leaderToPriority[leader] = { comment, time, commentIdx };
-            usedCommentTimestamp.add(`${commentIdx}_${time}`);
+          const leaderSec = groupLeaders[sec] !== undefined ? groupLeaders[sec] : sec;
+
+          // 해당 그룹(leaderSec)이 빈번하고 (2개 이상 언급)
+          // 아직 해당 그룹의 우선순위 댓글이 없거나, 현재 댓글이 더 좋아요가 많으면 업데이트
+          if (groupCounts[leaderSec] > 1) {
+            if (!leaderToPriorityComment[leaderSec] || comment.likeCount > leaderToPriorityComment[leaderSec].comment.likeCount) {
+              // 이전에 이 리더에 할당된 댓글이 있었다면, 그것은 이제 우선순위가 아님
+              if (leaderToPriorityComment[leaderSec]) {
+                usedAsPriority.delete(`${leaderToPriorityComment[leaderSec].comment.id}_${leaderToPriorityComment[leaderSec].time}`);
+              }
+              leaderToPriorityComment[leaderSec] = { comment, time };
+              usedAsPriority.add(`${comment.id}_${time}`);
+            }
           }
         });
       });
-      // Priority comments: one per group leader
-      const priorityList = Object.values(leaderToPriority);
-      priorityList.sort((a, b) => b.comment.likeCount - a.comment.likeCount);
-      setPriorityComments(priorityList);
-      // Other comments: all timestamps/comments not used as priority
-      const otherList = [];
-      filteredComments.forEach((comment, commentIdx) => {
+
+      let finalPriorityCommentsList = Object.values(leaderToPriorityComment);
+      // 시간순 정렬 (UI 표시용)
+      finalPriorityCommentsList.sort((a, b) => timestampToSeconds(a.time) - timestampToSeconds(b.time));
+      setPriorityComments(finalPriorityCommentsList);
+
+      let finalOtherCommentsList = [];
+      filteredComments.forEach((comment) => {
         comment.timestamps.forEach((time) => {
-          if (!usedCommentTimestamp.has(`${commentIdx}_${time}`)) {
-            otherList.push({ comment, time, commentIdx });
+          if (!usedAsPriority.has(`${comment.id}_${time}`)) {
+            finalOtherCommentsList.push({ comment, time });
           }
         });
       });
-      otherList.sort((a, b) => b.comment.likeCount - a.comment.likeCount);
-      setOtherComments(otherList);
+      // 시간순 정렬 (UI 표시용)
+      finalOtherCommentsList.sort((a, b) => timestampToSeconds(a.time) - timestampToSeconds(b.time));
+      setOtherComments(finalOtherCommentsList);
+
+      // App.jsx로 전달할 타임스탬프(초 단위) 배열 생성
+      const priorityTimestampsInSeconds = finalPriorityCommentsList.map(item => timestampToSeconds(item.time));
+      const regularTimestampsInSeconds = finalOtherCommentsList.map(item => timestampToSeconds(item.time));
+
+      // 중복 제거 및 정렬 후 부모 컴포넌트로 전달
+      const uniquePrioritySeconds = [...new Set(priorityTimestampsInSeconds)].sort((a, b) => a - b);
+      const uniqueRegularSeconds = [...new Set(regularTimestampsInSeconds)].sort((a, b) => a - b);
+      
+      console.log("VideoComments: Sending priority timestamps to App:", uniquePrioritySeconds);
+      setPriorityTimestamps && setPriorityTimestamps(uniquePrioritySeconds);
+      
+      console.log("VideoComments: Sending regular timestamps to App:", uniqueRegularSeconds);
+      setRegularTimestamps && setRegularTimestamps(uniqueRegularSeconds);
+      
+      setComments(filteredComments); // UI 표시용 전체 필터링 댓글 상태 업데이트
+
+      onCommentsLoaded && onCommentsLoaded(videoId); // 댓글 로드 완료 알림
 
     } catch (err) {
-      console.error("Error fetching comments:", err);
-      setError("Failed to fetch comments. Check your API key.");
+      console.error("Error fetching comments:", err.response ? err.response.data : err.message);
+      setError(err.response?.data?.error?.message || "Failed to fetch comments. Check API key or network.");
+      // 에러 발생 시 부모 컴포넌트의 타임스탬프도 초기화
       setPriorityTimestamps && setPriorityTimestamps([]);
       setRegularTimestamps && setRegularTimestamps([]);
-      setTimestampFrequency({});
     } finally {
       setLoading(false);
     }
@@ -184,93 +188,90 @@ const VideoComments = ({ videoId, setPriorityTimestamps, setRegularTimestamps, o
 
   /**
    * 타임스탬프 클릭 처리
-   * - 선택된 타임스탬프를 Context에 저장
-   * - VideoPlayer 컴포넌트에서 해당 시점으로 이동
    */
   const handleTimestampClick = (timestamp) => {
-    setCurrentTimestamp(timestamp);
+    setCurrentTimestamp(timestamp); // Context 업데이트 -> VideoPlayer에서 seek
   };
 
-  // Automatically fetch comments when videoId changes
+  // videoId 변경 시 댓글 자동 로드
   useEffect(() => {
     if (videoId) {
-      // Reset states
+      fetchComments();
+    } else {
+      // videoId가 없으면 모든 관련 상태 초기화
+      setComments([]);
       setPriorityComments([]);
       setOtherComments([]);
       setTimestampFrequency({});
       setError("");
-      
-      // Fetch comments
-      fetchComments();
+      setLoading(false);
+      setPriorityTimestamps && setPriorityTimestamps([]);
+      setRegularTimestamps && setRegularTimestamps([]);
     }
-    // eslint-disable-next-line
-  }, [videoId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [videoId]); // API_KEY는 상수이므로 의존성 배열에서 제거, setPriority/RegularTimestamps는 App에서 오므로 변경되지 않음 가정
 
   return (
     <div>
-      {/* 댓글 로드 버튼 제거됨 - 자동 로드 */}
-      {/* {loading && <div className="spinner"></div>} */}
       {loading && <div className="spinner"></div>}
-
-      {/* 에러 메시지 */}
       {error && <p style={{ color: "red" }}>{error}</p>}
 
-      {/* 댓글 목록 */}
-      {(priorityComments.length > 0 || otherComments.length > 0) && (
+      {(priorityComments.length > 0 || otherComments.length > 0) && !loading && (
         <div className="comments-container">
-          {/* Priority comments section */}
           {priorityComments.length > 0 && (
             <>
               <h3>Priority Highlights</h3>
               <ul>
-                {priorityComments.map(({ comment, time, commentIdx }, idx) => (
-                  <li key={`priority-${commentIdx}-${time}`} className="comment-item" style={{ display: 'flex', alignItems: 'center', gap: '16px', background: '#fffbe6', borderLeft: '4px solid #d47b06' }}>
-                    <span style={{ minWidth: 60, color: '#d47b06', fontWeight: 'bold' }}>👍 {comment.likeCount}</span>
+                {priorityComments.map(({ comment, time }, idx) => (
+                  <li 
+                    key={`priority-${comment.id}-${time}-${idx}`} // comment.id와 time, idx 조합으로 더 고유한 키
+                    className="comment-item" 
+                    style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 0', borderBottom: '1px solid #eee', background: '#fffbe6', borderLeft: '4px solid #d47b06' }}
+                  >
+                    <span style={{ minWidth: 60, color: '#d47b06', fontWeight: 'bold', fontSize: '0.9em' }}>👍 {comment.likeCount}</span>
                     <button
                       onClick={() => handleTimestampClick(time)}
                       className="comment-timestamp"
                       style={{
-                        background: 'none',
-                        border: 'none',
-                        color: '#d47b06',
-                        textDecoration: 'underline',
-                        cursor: 'pointer',
-                        padding: '0 5px',
-                        fontWeight: 'bold',
-                        fontSize: '1rem',
+                        background: 'none', border: 'none', color: '#d47b06',
+                        textDecoration: 'underline', cursor: 'pointer', padding: '0 5px',
+                        fontWeight: 'bold', fontSize: '0.95rem', textAlign: 'left'
                       }}
+                      title={`Jump to ${time}`}
                     >
-                      {time} <span title="Popular timestamp">★</span>
+                      {time} <span title="Popular timestamp (mentioned multiple times)">★</span>
                     </button>
+                    {/* <p style={{ margin: 0, fontSize: '0.85em', color: '#555', flexGrow: 1, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }} dangerouslySetInnerHTML={{ __html: comment.text.substring(0, 100) + (comment.text.length > 100 ? '...' : '') }} /> */}
                   </li>
                 ))}
               </ul>
             </>
           )}
-          {/* Other comments section */}
+
           {otherComments.length > 0 && (
             <>
               <h3>Other Timestamps</h3>
               <ul>
-                {otherComments.map(({ comment, time, commentIdx }, idx) => (
-                  <li key={`other-${commentIdx}-${time}`} className="comment-item" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                    <span style={{ minWidth: 60, color: '#888', fontWeight: 'bold' }}>👍 {comment.likeCount}</span>
+                {otherComments.map(({ comment, time }, idx) => (
+                  <li 
+                    key={`other-${comment.id}-${time}-${idx}`} // comment.id와 time, idx 조합
+                    className="comment-item" 
+                    style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 0', borderBottom: '1px solid #eee' }}
+                  >
+                    <span style={{ minWidth: 60, color: '#777', fontWeight: 'normal', fontSize: '0.9em' }}>👍 {comment.likeCount}</span>
                     <button
                       onClick={() => handleTimestampClick(time)}
                       className="comment-timestamp"
                       style={{
-                        background: 'none',
-                        border: 'none',
-                        color: '#065fd4',
-                        textDecoration: 'underline',
-                        cursor: 'pointer',
-                        padding: '0 5px',
-                        fontWeight: 'normal',
-                        fontSize: '1rem',
+                        background: 'none', border: 'none', color: '#065fd4',
+                        textDecoration: 'underline', cursor: 'pointer', padding: '0 5px',
+                        fontWeight: 'normal', fontSize: '0.95rem', textAlign: 'left'
                       }}
+                      title={`Jump to ${time}`}
                     >
                       {time}
                     </button>
+                    {/* <p style={{ margin: 0, fontSize: '0.85em', color: '#555', flexGrow: 1, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }} dangerouslySetInnerHTML={{ __html: comment.text.substring(0, 100) + (comment.text.length > 100 ? '...' : '') }} /> */}
                   </li>
                 ))}
               </ul>
@@ -278,6 +279,7 @@ const VideoComments = ({ videoId, setPriorityTimestamps, setRegularTimestamps, o
           )}
         </div>
       )}
+      {!loading && !error && comments.length === 0 && videoId && <p>No comments with timestamps found (or API error).</p>}
     </div>
   );
 };
