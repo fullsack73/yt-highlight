@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>YouTube Highlight Extractor</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 20px;
+      width: 280px;
+      font-family: 'Segoe UI', sans-serif;
+      background-color: #ffffff;
+      color: #333333;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    h1 {
+      font-size: 1.1rem;
+      margin-bottom: 6px;
+      color: #222222;
+    }
+
+    p {
+      font-size: 0.85rem;
+      color: #555555;
+      margin-bottom: 20px;
+      text-align: center;
+    }
+
+    button {
+      background-color: #0066ff;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      cursor: pointer;
+      transition: background-color 0.2s ease;
+      width: 100%;
+    }
+
+    button:hover {
+      background-color: #0052cc;
+    }
+
+    #status {
+      margin-top: 15px;
+      font-size: 0.8rem;
+      color: #666666;
+      word-break: break-all;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <h1>🔗 YouTube URL 가져오기</h1>
+  <p>현재 보고 있는 YouTube 탭의 주소를 가져와 복사합니다</p>
+  <button id="getUrlBtn">📋 URL 복사 후 새 탭에서 열기</button>
+  <div id="status"></div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
