@@ -112,19 +112,7 @@ const VideoInput = ({ onVideoSubmit, children }) => {
             console.log('API response:', data);
             if (data.status === 'success') {
               console.log('Highlights:', data.highlights);
-              // UI is already loaded, so we can just show a success message
-              setError(
-                <div className="success-message">
-                  <p>✅ Audio analysis complete! Highlights have been added to the timeline.</p>
-                </div>
-              );
             } else if (data.status === 'processing') {
-              // Show that processing is happening in the background
-              setError(
-                <div className="processing-message">
-                  <p>🔄 Audio analysis running in background...</p>
-                </div>
-              );
               // Start polling for results
               const statusInterval = setInterval(() => {
                 checkStatus(videoUrl, statusInterval);
@@ -295,11 +283,6 @@ const VideoInput = ({ onVideoSubmit, children }) => {
           );
         } else if (data.status === 'processing') {
           // Update the processing message with more details
-          setError(
-            <div className="processing-message">
-              <p>🔄 Audio analysis running in background... This may take a minute.</p>
-            </div>
-          );
         }
       })
       .catch(error => {

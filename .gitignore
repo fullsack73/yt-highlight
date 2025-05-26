@@ -27,4 +27,3 @@ src/cache
 __pycache__
 cache/*
 uploads/*
-src/researcher.py
