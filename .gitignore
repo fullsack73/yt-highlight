@@ -27,5 +27,4 @@ src/cache
 __pycache__
 cache/*
 uploads/*
-src/instructions.md
 src/researcher.py

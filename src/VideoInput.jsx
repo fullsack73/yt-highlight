@@ -255,14 +255,14 @@ const VideoInput = ({ onVideoSubmit, children }) => {
 
   // Function to check processing status
   const checkStatus = (url, interval) => {
-    fetch('http://localhost:5000/api/check-status', {
-      method: 'POST',
+    fetch(`http://localhost:5000/api/analysis-status?youtube_url=${encodeURIComponent(url)}`, {
+      method: 'GET',
       headers: {
-        'Content-Type': 'application/json',
+        // 'Content-Type': 'application/json', // Not needed for GET with query params
       },
-      credentials: 'omit',
+      credentials: 'omit', // Keep as is, or review if CORS issues arise
       mode: 'cors',
-      body: JSON.stringify({ youtube_url: url }),
+      // body: JSON.stringify({ youtube_url: url }), // Data sent via query parameter
     })
       .then(response => response.json())
       .then(data => {
