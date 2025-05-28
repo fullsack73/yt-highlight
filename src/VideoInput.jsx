@@ -180,7 +180,7 @@ const VideoInput = ({ onVideoSubmit, children }) => {
                 );
               }
             } else {
-              setError(data.error || 'Failed to process video');
+              setError(data.error || '비디오 처리 실패');
             }
           })
           .catch((error) => {
