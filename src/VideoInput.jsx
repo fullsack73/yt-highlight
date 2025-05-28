@@ -132,8 +132,8 @@ const VideoInput = ({ onVideoSubmit, children }) => {
               if (errorMessage.includes('Broken pipe')) {
                 setError(
                   <div className="error-message">
-                    <p>⚠️ Audio analysis error: {errorMessage}</p>
-                    <p>Video will play, but highlights may be limited.</p>
+                    <p>⚠️ 오디오 분석 오류: {errorMessage}</p>
+                    <p>비디오가 재생되지만, 하이라이트는 제한될 수 있습니다.</p>
                     <button onClick={() => retryWithFallback(videoUrl)} className="retry-button">
                       Retry Analysis
                     </button>
@@ -142,8 +142,8 @@ const VideoInput = ({ onVideoSubmit, children }) => {
               } else if (errorMessage.includes('Download failed')) {
                 setError(
                   <div>
-                    <p>Download error: {errorMessage}</p>
-                    <p>Check the YouTube URL and try again.</p>
+                    <p>다운로드 오류: {errorMessage}</p>
+                    <p>유튜브 URL을 확인하고 다시 시도해 보세요.</p>
                     <button onClick={() => retryWithFallback(videoUrl)} className="retry-button">
                       Retry Download
                     </button>
@@ -152,8 +152,8 @@ const VideoInput = ({ onVideoSubmit, children }) => {
               } else if (errorMessage.includes('Failed to generate highlights')) {
                 setError(
                   <div>
-                    <p>Highlight detection error: {errorMessage}</p>
-                    <p>We'll try to generate basic highlights for you.</p>
+                    <p>하이라이트 탐지 오류: {errorMessage}</p>
+                    <p>기본적인 하이라이트를 만들어드리겠습니다.</p>
                     <button onClick={() => retryWithFallback(videoUrl)} className="retry-button">
                       Generate Basic Highlights
                     </button>
@@ -162,8 +162,8 @@ const VideoInput = ({ onVideoSubmit, children }) => {
               } else if (errorMessage.includes('Processing failed')) {
                 setError(
                   <div>
-                    <p>Processing error: {errorMessage}</p>
-                    <p>Try again or use a different video.</p>
+                    <p>처리 오류: {errorMessage}</p>
+                    <p>다시 시도하거나, 다른 동영상을 사용하세요.</p>
                     <button onClick={() => retryWithFallback(videoUrl)} className="retry-button">
                       Retry Processing
                     </button>
@@ -260,7 +260,7 @@ const VideoInput = ({ onVideoSubmit, children }) => {
           // Just update the status message
           setError(
             <div className="success-message">
-              <p>✅ Audio analysis complete! {data.highlights?.length || 0} highlights added to the timeline.</p>
+              <p>✅ 오디오 분석 완료! {data.highlights?.length || 0} 타임라인에 추가된 하이라이트</p>
             </div>
           );
 
@@ -274,8 +274,8 @@ const VideoInput = ({ onVideoSubmit, children }) => {
           clearInterval(interval);
           setError(
             <div className="error-message">
-              <p>⚠️ Audio analysis error: {data.error}</p>
-              <p>Video will play, but highlights may be limited.</p>
+              <p>⚠️ 오디오 분석 오류: {data.error}</p>
+              <p>비디오가 재생되지만, 하이라이트는 제한될 수 있습니다.</p>
               <button onClick={() => retryWithFallback(url)} className="retry-button">
                 Retry Analysis
               </button>
@@ -289,7 +289,7 @@ const VideoInput = ({ onVideoSubmit, children }) => {
         clearInterval(interval);
         setError(
           <div className="error-message">
-            <p>⚠️ Status check failed: {error.message}</p>
+            <p>⚠️ 상태 확인 실패: {error.message}</p>
             <button onClick={() => retryWithFallback(url)} className="retry-button">
               Retry Analysis
             </button>
