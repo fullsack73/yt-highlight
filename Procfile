@@ -1,1 +1,1 @@
-web: gunicorn --bind 0.0.0.0:8080 --workers 4 --threads 2 --timeout 120 src.audio:app
+web: gunicorn --chdir backend/src audio:app --bind 0.0.0.0:8080
