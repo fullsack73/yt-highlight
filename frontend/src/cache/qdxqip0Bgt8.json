@@ -1,0 +1,25 @@
+{
+  "status": "partial_success",
+  "message": "Audio highlights (4). Most Replayed failed: Error: Heatmap data not found in any expected structure. Total: 8.69s.",
+  "audio_highlights": [
+    140.05,
+    146.25,
+    148.25,
+    150.25
+  ],
+  "audio_highlight_source": "primary",
+  "heatmap_info": {
+    "status": "error",
+    "data": null,
+    "error": "Error: Heatmap data not found in any expected structure."
+  },
+  "error_details": "Heatmap: Error: Heatmap data not found in any expected structure.",
+  "processing_times": {
+    "total": 8.69,
+    "download": 6.34,
+    "audio_analysis": 1.1,
+    "heatmap": 1.25
+  },
+  "timestamp": 1749019795.998497,
+  "retryable": false
+}

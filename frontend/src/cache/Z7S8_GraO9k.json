@@ -1,0 +1,55 @@
+{
+  "status": "success",
+  "message": "Audio highlights (15). Most Replayed data retrieved. Total: 13.00s.",
+  "audio_highlights": [
+    29.3,
+    36.1,
+    48.05,
+    53.75,
+    60.45,
+    63.05,
+    67.8,
+    72.6,
+    76.3,
+    81.5,
+    84.85,
+    99.05,
+    110.7,
+    113.6,
+    119.85
+  ],
+  "audio_highlight_source": "primary",
+  "heatmap_info": {
+    "status": "success",
+    "data": {
+      "video_id": "Z7S8_GraO9k",
+      "most_replayed_label": {
+        "label_text": "Most replayed",
+        "decoration_time_millis": "433710",
+        "formatted_time": "07:13"
+      },
+      "most_replayed_label_marker_data": {
+        "startMillis": "433710",
+        "durationMillis": "5000",
+        "intensityScoreNormalized": "0.9"
+      },
+      "highest_intensity_marker_data": {
+        "startMillis": "433710",
+        "durationMillis": "5490",
+        "intensityScoreNormalized": 1,
+        "formatted_start_time": "07:13",
+        "formatted_duration": "00:05"
+      }
+    },
+    "error": null
+  },
+  "error_details": null,
+  "processing_times": {
+    "total": 13.0,
+    "download": 9.12,
+    "audio_analysis": 2.88,
+    "heatmap": 1.01
+  },
+  "timestamp": 1749019525.8127072,
+  "retryable": false
+}

@@ -1,0 +1,20 @@
+{
+  "status": "error",
+  "message": "Most Replayed failed: Error: Request failed for https://www.youtube.com/watch?v=Us2Z-WC9rao: HTTPSConnectionPool(host='www.youtube.com', port=443): Max retries exceeded with url: /watch?v=Us2Z-WC9rao (Caused by NameResolutionError(\"<urllib3.connection.HTTPSConnection object at 0x120938710>: Failed to resolve 'www.youtube.com' ([Errno 8] nodename nor servname provided, or not known)\")) Total: 1906.00s.",
+  "audio_highlights": [],
+  "audio_highlight_source": "none",
+  "heatmap_info": {
+    "status": "error",
+    "data": null,
+    "error": "Error: Request failed for https://www.youtube.com/watch?v=Us2Z-WC9rao: HTTPSConnectionPool(host='www.youtube.com', port=443): Max retries exceeded with url: /watch?v=Us2Z-WC9rao (Caused by NameResolutionError(\"<urllib3.connection.HTTPSConnection object at 0x120938710>: Failed to resolve 'www.youtube.com' ([Errno 8] nodename nor servname provided, or not known)\"))"
+  },
+  "error_details": "No audio highlights.; Heatmap: Error: Request failed for https://www.youtube.com/watch?v=Us2Z-WC9rao: HTTPSConnectionPool(host='www.youtube.com', port=443): Max retries exceeded with url: /watch?v=Us2Z-WC9rao (Caused by NameResolutionError(\"<urllib3.connection.HTTPSConnection object at 0x120938710>: Failed to resolve 'www.youtube.com' ([Errno 8] nodename nor servname provided, or not known)\"))",
+  "processing_times": {
+    "total": 1906.0,
+    "download": 0,
+    "audio_analysis": 0,
+    "heatmap": 0.0
+  },
+  "timestamp": 1749024173.2974331,
+  "retryable": true
+}
