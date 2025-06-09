@@ -18,17 +18,13 @@ from werkzeug.utils import secure_filename
 from werkzeug.exceptions import HTTPException
 import requests
 
-# --- 1. 경로 설정 및 Flask 앱 초기화 ---
+# --- 1. 경로 설정 및 Flask 앱 초기화 (최종 수정안) ---
 
-# 현재 파일(audio.py)의 위치를 기준으로 프로젝트 루트 폴더의 절대 경로를 계산
-# audio.py -> src -> backend -> yt-hl (프로젝트 루트)
-project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-# React 빌드 결과물이 위치할 static 폴더 경로 설정 (Vite의 기본 출력은 'dist')
-static_folder_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'frontend', 'dist')
-
-# Flask 앱 초기화. static_folder를 위에서 계산한 경로로 지정
-application = Flask(__name__, static_folder=static_folder_path)
+# Flask 앱 초기화.
+# application.py가 루트에 있으므로, static_folder 경로는 매우 간단해집니다.
+# 'frontend/dist'는 React 빌드 결과물이 있는 폴더입니다.
+# static_url_path=''는 /assets/.. 같은 URL을 그대로 사용하게 해줍니다.
+application = Flask(__name__, static_folder='frontend/dist', static_url_path='')
 
 # 임시 파일(업로드, 캐시)을 위한 폴더 경로를 /tmp로 변경하여 안정성 확보
 application.config['UPLOAD_FOLDER'] = '/tmp/yt-hl-uploads'
@@ -288,40 +284,27 @@ def analysis_status_endpoint():
 
 @application.route('/health')
 def health_check():
-    """
-    ELB Health-Check를 위한 전용 엔드포인트.
-    가볍고 빠르게 200 OK만 반환합니다.
-    """
+    """ELB Health-Check를 위한 전용 엔드포인트."""
     return jsonify(status="ok"), 200
 
-@application.route('/', defaults={'path': ''})
-@application.route('/<path:path>')
-def serve(path):
+@application.errorhandler(404)
+def not_found(e):
     """
-    React 앱의 정적 파일들을 서빙하는 메인 핸들러.
-    모든 경로 요청을 React의 index.html로 연결하여 클라이언트 사이드 라우팅을 지원합니다.
+    모든 404 Not Found 에러를 잡아서 index.html로 리디렉션합니다.
+    이것이 React Router가 모든 경로를 처리하게 하는 핵심입니다.
+    단, /api/ 로 시작하는 경로는 제외합니다.
     """
-    if path and os.path.exists(os.path.join(application.static_folder, path)):
-        return send_from_directory(application.static_folder, path)
-    
-    index_path = os.path.join(application.static_folder, 'index.html')
-    if not os.path.exists(index_path):
-        return jsonify(error=f"Frontend entry point not found at {index_path}"), 404
+    if request.path.startswith('/api/'):
+        return jsonify(error='Not found'), 404
         
-    return send_from_directory(application.static_folder, 'index.html')
+    index_path = os.path.join(application.static_folder, 'index.html')
+    if os.path.exists(index_path):
+        return send_from_directory(application.static_folder, 'index.html')
+    else:
+        return jsonify(error=f"Frontend entry point not found. Searched for {index_path}"), 404
 
 
 # --- 6. 메인 실행 블록 ---
-# 로컬 개발 환경에서 `python -m backend.src.audio`로 실행할 때 사용됩니다.
+# 로컬 개발 환경에서 `python application.py`로 실행할 때 사용됩니다.
 if __name__ == '__main__':
-    # 로컬 개발 시에는 Vite 개발 서버에서 프록시 설정을 사용하는 것이 일반적이므로
-    # Flask에서 직접 CORS 헤더를 추가할 필요는 없습니다.
-    # 만약 다른 환경에서 API만 따로 테스트한다면 아래 주석을 해제할 수 있습니다.
-    # @app.after_request
-    # def after_request(response):
-    #     response.headers.add('Access-Control-Allow-Origin', '*')
-    #     response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
-    #     response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
-    #     return response
-        
-    application.run(debug=True, host='0.0.0.0', port=5000, threaded=True)
+    application.run(debug=True, host='0.0.0.0', port=5000)
