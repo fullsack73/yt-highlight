@@ -74,7 +74,7 @@ const VideoInput = ({ onVideoSubmit, children }) => {
         console.log('Starting background processing for:', videoUrl);
 
         // Use the simplified API URL without /yt-highlight prefix
-        const apiUrl = 'http://localhost:5000/api/process-youtube';
+        const apiUrl = '/api/process-youtube';
         console.log('Full API URL:', apiUrl);
 
         // Make the API call in the background without blocking UI
@@ -201,7 +201,7 @@ const VideoInput = ({ onVideoSubmit, children }) => {
     setError("Retrying analysis with fallback options...");
 
     // Make API call with force_fresh=true to bypass cache
-    fetch('http://localhost:5000/api/process-youtube', {
+    fetch('/api/process-youtube', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -243,7 +243,7 @@ const VideoInput = ({ onVideoSubmit, children }) => {
 
   // Function to check processing status
   const checkStatus = (url, interval) => {
-    fetch(`http://localhost:5000/api/analysis-status?youtube_url=${encodeURIComponent(url)}`, {
+    fetch(`/api/analysis-status?youtube_url=${encodeURIComponent(url)}`, {
       method: 'GET',
       headers: {
         // 'Content-Type': 'application/json', // Not needed for GET with query params
