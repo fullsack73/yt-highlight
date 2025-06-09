@@ -423,6 +423,12 @@ def get_youtube_most_replayed_heatmap_data(video_id: str):
         traceback.print_exc()
         return f"Error: Unexpected: {e}"
 
+@app.route('/health')
+def health_check():
+    """Health check endpoint"""
+    return jsonify(status="ok"), 200
+
+
 @app.route('/api/process-youtube', methods=['POST'])
 def process_youtube_url_endpoint():
     print(f"\n[API POST /api/process-youtube] Called at {time.ctime()}")
