@@ -1,3 +1,5 @@
+!.ebextensions/*
+!cookies.txt
 
 # Logs
 logs

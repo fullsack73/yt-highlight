@@ -37,4 +37,5 @@ uploads/*
 !.elasticbeanstalk/*.cfg.yml
 !.elasticbeanstalk/*.global.yml
 
+.ebextensions/*
 cookies.txt
