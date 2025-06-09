@@ -428,7 +428,6 @@ def health_check():
     """Health check endpoint"""
     return jsonify(status="ok"), 200
 
-
 @app.route('/api/process-youtube', methods=['POST'])
 def process_youtube_url_endpoint():
     print(f"\n[API POST /api/process-youtube] Called at {time.ctime()}")
