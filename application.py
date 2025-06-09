@@ -91,7 +91,7 @@ def download_audio(youtube_url, output_path='.'):
             'outtmpl': output_template,
             'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '64'}],
             'quiet': True, 
-            'noplaylist': True, 
+            'noplaylist': True,
             'socket_timeout': 60, 
             'retries': 3,
             'nocheckcertificate': True,
@@ -102,13 +102,12 @@ def download_audio(youtube_url, output_path='.'):
             'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
         }
 
-        # ★★★★★ 핵심 수정 부분 ★★★★★
-        # 전역 변수인 COOKIE_FILE_PATH를 사용하고, 옵션 키를 'cookiefile'로 수정
+        # Use the COOKIE_FILE_PATH defined at the top of the file (e.g., /tmp/cookies.txt)
         if COOKIE_FILE_PATH and os.path.exists(COOKIE_FILE_PATH):
             ydl_opts['cookiefile'] = COOKIE_FILE_PATH
             print(f"[DOWNLOAD] Using cookie file from: {COOKIE_FILE_PATH}")
         else:
-            print(f"[DOWNLOAD_WARNING] Cookie file not found or path is not set. Proceeding without cookies.")
+            print(f"[DOWNLOAD_WARNING] Cookie file not found at {COOKIE_FILE_PATH} or path is not set. Proceeding without cookies.")
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             # 먼저 메타데이터만 가져와서 예상 파일 경로를 만듭니다.
