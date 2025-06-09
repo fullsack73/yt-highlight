@@ -36,12 +36,12 @@ application.config['CACHE_FOLDER'] = '/tmp/yt-hl-cache'
 
 # --- 2. 스레드 풀 및 에러 핸들러 ---
 
-app.audio_executor = ThreadPoolExecutor(max_workers=2)
-app.audio_analysis_futures = {}
+application.audio_executor = ThreadPoolExecutor(max_workers=2)
+application.audio_analysis_futures = {}
 
-@app.errorhandler(Exception)
+@application.errorhandler(Exception)
 def handle_exception(e):
-    app.logger.error(f"Unhandled exception: {str(e)}", exc_info=True)
+    application.logger.error(f"Unhandled exception: {str(e)}", exc_info=True)
     traceback.print_exc()
 
     status_code = 500
@@ -66,8 +66,8 @@ def handle_exception(e):
 
 # --- 3. 폴더 생성 및 헬퍼 함수 ---
 
-os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-os.makedirs(app.config['CACHE_FOLDER'], exist_ok=True)
+os.makedirs(application.config['UPLOAD_FOLDER'], exist_ok=True)
+os.makedirs(application.config['CACHE_FOLDER'], exist_ok=True)
 
 def get_cache_key(youtube_url):
     video_id = None
@@ -85,7 +85,7 @@ def get_cache_key(youtube_url):
     return video_id
 
 def check_cache(cache_key):
-    cache_file = os.path.join(app.config['CACHE_FOLDER'], f"{cache_key}.json")
+    cache_file = os.path.join(application.config['CACHE_FOLDER'], f"{cache_key}.json")
     if os.path.exists(cache_file):
         try:
             with open(cache_file, 'r') as f:
@@ -95,7 +95,7 @@ def check_cache(cache_key):
     return None
 
 def save_to_cache(cache_key, data):
-    cache_file = os.path.join(app.config['CACHE_FOLDER'], f"{cache_key}.json")
+    cache_file = os.path.join(application.config['CACHE_FOLDER'], f"{cache_key}.json")
     try:
         with open(cache_file, 'w') as f:
             json.dump(data, f, indent=2)
@@ -212,7 +212,7 @@ def background_analysis_task(url, key, force_processing_flag):
     task_start_time = time.time()
     audio_filepath = None
     try:
-        audio_filepath = download_audio(url, app.config['UPLOAD_FOLDER'])
+        audio_filepath = download_audio(url, application.config['UPLOAD_FOLDER'])
         audio_highlights = get_highlights(audio_filepath)
         
         result_data = {
@@ -237,13 +237,13 @@ def background_analysis_task(url, key, force_processing_flag):
                 os.remove(audio_filepath)
             except Exception as e_clean:
                 print(f"Error cleaning up file {audio_filepath}: {e_clean}")
-        if key in app.audio_analysis_futures:
-            del app.audio_analysis_futures[key]
+        if key in application.audio_analysis_futures:
+            del application.audio_analysis_futures[key]
 
 
 # --- 4. API 라우트 ---
 
-@app.route('/api/process-youtube', methods=['POST'])
+@application.route('/api/process-youtube', methods=['POST'])
 def process_youtube_url_endpoint():
     data = request.get_json()
     if not data or 'youtube_url' not in data:
@@ -258,15 +258,15 @@ def process_youtube_url_endpoint():
         if cached_result:
             return jsonify(cached_result)
 
-    if cache_key in app.audio_analysis_futures and not app.audio_analysis_futures[cache_key].done():
+    if cache_key in application.audio_analysis_futures and not application.audio_analysis_futures[cache_key].done():
         return jsonify({'status': 'processing', 'message': 'Analysis already in progress.'})
 
-    future = app.audio_executor.submit(background_analysis_task, youtube_url, cache_key, force_fresh)
-    app.audio_analysis_futures[cache_key] = future
+    future = application.audio_executor.submit(background_analysis_task, youtube_url, cache_key, force_fresh)
+    application.audio_analysis_futures[cache_key] = future
     
     return jsonify({'status': 'processing', 'message': 'Analysis initiated.', 'cache_key': cache_key})
 
-@app.route('/api/analysis-status', methods=['GET'])
+@application.route('/api/analysis-status', methods=['GET'])
 def analysis_status_endpoint():
     youtube_url = request.args.get('youtube_url')
     if not youtube_url:
@@ -278,7 +278,7 @@ def analysis_status_endpoint():
     if cached_result:
         return jsonify(cached_result)
 
-    if cache_key in app.audio_analysis_futures and not app.audio_analysis_futures[cache_key].done():
+    if cache_key in application.audio_analysis_futures and not application.audio_analysis_futures[cache_key].done():
         return jsonify({'status': 'processing', 'message': 'Analysis ongoing.'})
 
     return jsonify({'status': 'not_started', 'message': 'Analysis not initiated or result is missing.'})
@@ -286,7 +286,7 @@ def analysis_status_endpoint():
 
 # --- 5. Health Check 및 React 앱 서빙 ---
 
-@app.route('/health')
+@application.route('/health')
 def health_check():
     """
     ELB Health-Check를 위한 전용 엔드포인트.
@@ -294,21 +294,21 @@ def health_check():
     """
     return jsonify(status="ok"), 200
 
-@app.route('/', defaults={'path': ''})
-@app.route('/<path:path>')
+@application.route('/', defaults={'path': ''})
+@application.route('/<path:path>')
 def serve(path):
     """
     React 앱의 정적 파일들을 서빙하는 메인 핸들러.
     모든 경로 요청을 React의 index.html로 연결하여 클라이언트 사이드 라우팅을 지원합니다.
     """
-    if path and os.path.exists(os.path.join(app.static_folder, path)):
-        return send_from_directory(app.static_folder, path)
+    if path and os.path.exists(os.path.join(application.static_folder, path)):
+        return send_from_directory(application.static_folder, path)
     
-    index_path = os.path.join(app.static_folder, 'index.html')
+    index_path = os.path.join(application.static_folder, 'index.html')
     if not os.path.exists(index_path):
         return jsonify(error=f"Frontend entry point not found at {index_path}"), 404
         
-    return send_from_directory(app.static_folder, 'index.html')
+    return send_from_directory(application.static_folder, 'index.html')
 
 
 # --- 6. 메인 실행 블록 ---
