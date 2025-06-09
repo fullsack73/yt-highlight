@@ -36,3 +36,5 @@ uploads/*
 .elasticbeanstalk/*
 !.elasticbeanstalk/*.cfg.yml
 !.elasticbeanstalk/*.global.yml
+
+cookies.txt

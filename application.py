@@ -104,13 +104,19 @@ def download_audio(youtube_url, output_path='.', retry_count=3):
         video_id_for_filename = match.group(1) if match else hashlib.md5(youtube_url.encode()).hexdigest()
         
         output_template = os.path.join(output_path, '%(id)s.%(ext)s')
+        cookie_file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'cookies.txt')
 
         ydl_opts = {
             'format': 'bestaudio[ext=m4a]/bestaudio/worstaudio/worst', 'outtmpl': output_template,
             'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '64'}],
             'quiet': False, 'noplaylist': True, 'socket_timeout': 60, 'retries': 10,
             'nocheckcertificate': True, 'ignoreerrors': False,
+            'cookies': cookie_file_path,
         }
+
+        if not os.path.exists(cookie_file_path):
+            print(f"[WARNING] Cookie file not found at {cookie_file_path}. Proceeding without cookies.")
+            del ydl_opts['cookies']
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info_dict = ydl.extract_info(youtube_url, download=True)
