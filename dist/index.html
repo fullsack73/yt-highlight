@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/yt-highlight/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Vite + React</title>
+    <script type="module" crossorigin src="/yt-highlight/assets/index-D8e1q6f7.js"></script>
+    <link rel="stylesheet" crossorigin href="/yt-highlight/assets/index-BPLusKYo.css">
+  </head>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const params = new URLSearchParams(window.location.search);
+      const videoUrl = params.get("videoUrl");
+  
+      if (videoUrl) {
+        const input = document.querySelector('[role="textbox"]');
+        if (input) {
+          input.textContent = videoUrl;
+        } else {
+          console.warn("role='textbox' 요소를 찾을 수 없습니다.");
+        }
+      }
+    });
+  </script>
+
+  <body>
+    <div id="root"></div>
+  </body>
+</html>
