@@ -18,6 +18,22 @@ from werkzeug.utils import secure_filename
 from werkzeug.exceptions import HTTPException
 import requests
 
+COOKIE_FILE_PATH = '/tmp/cookies.txt'
+YOUTUBE_COOKIES_ENV = os.environ.get('YOUTUBE_COOKIES')
+
+if YOUTUBE_COOKIES_ENV:
+    try:
+        with open(COOKIE_FILE_PATH, 'w') as f:
+            f.write(YOUTUBE_COOKIES_ENV)
+        print(f"[COOKIE_SETUP] Successfully wrote cookies to {COOKIE_FILE_PATH}")
+    except Exception as e:
+        print(f"[COOKIE_SETUP_ERROR] Failed to write cookies to file: {e}")
+        # 파일 쓰기 실패 시, 해당 경로를 None으로 설정하여 이후 로직에서 사용하지 않도록 함
+        COOKIE_FILE_PATH = None 
+else:
+    print("[COOKIE_SETUP_WARNING] YOUTUBE_COOKIES environment variable not found.")
+    COOKIE_FILE_PATH = None
+
 # --- 1. 경로 설정 및 Flask 앱 초기화 (최종 수정안) ---
 
 # Flask 앱 초기화.
@@ -112,11 +128,22 @@ def download_audio(youtube_url, output_path='.', retry_count=3):
             'quiet': False, 'noplaylist': True, 'socket_timeout': 60, 'retries': 10,
             'nocheckcertificate': True, 'ignoreerrors': False,
             'cookies': cookie_file_path,
+            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36',
+            'sleep_interval_requests': 0.5,
+            'max_sleep_interval_requests': 1.5,
         }
 
-        if not os.path.exists(cookie_file_path):
-            print(f"[WARNING] Cookie file not found at {cookie_file_path}. Proceeding without cookies.")
-            del ydl_opts['cookies']
+        if os.path.exists(COOKIE_FILE_PATH):
+            ydl_opts['cookiefile'] = COOKIE_FILE_PATH
+            print(f"[DOWNLOAD] Using cookie file from: {COOKIE_FILE_PATH}")
+        else:
+            print(f"[DOWNLOAD_WARNING] Cookie file not found at {COOKIE_FILE_PATH}. Proceeding without cookies.")
+
+        if COOKIE_FILE_PATH and os.path.exists(COOKIE_FILE_PATH):
+            ydl_opts['cookiefile'] = COOKIE_FILE_PATH
+            print(f"[DOWNLOAD] Using cookie file: {COOKIE_FILE_PATH}")
+        else:
+            print("[DOWNLOAD] Proceeding without cookie file.")
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info_dict = ydl.extract_info(youtube_url, download=True)
