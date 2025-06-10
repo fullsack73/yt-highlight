@@ -52,6 +52,68 @@ def handle_exception(e):
 os.makedirs(application.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs(application.config['CACHE_FOLDER'], exist_ok=True)
 
+def cleanup_on_startup():
+    """Cleans up orphaned files from previous runs."""
+    application.logger.info("Running startup cleanup...")
+    download_dir = application.config['UPLOAD_FOLDER']
+    cache_dir = application.config['CACHE_FOLDER']
+    
+    if not os.path.exists(download_dir) or not os.path.exists(cache_dir):
+        application.logger.info("Download or cache directory does not exist, skipping cleanup.")
+        return
+
+    # Get sets of keys from filenames
+    try:
+        download_keys = {os.path.splitext(f)[0] for f in os.listdir(download_dir) if f.endswith('.mp3')}
+        cache_keys = {os.path.splitext(f)[0] for f in os.listdir(cache_dir) if f.endswith('.json')}
+    except Exception as e:
+        application.logger.error(f"Error reading directories during cleanup: {e}")
+        return
+
+    # Find orphaned files
+    orphaned_downloads = download_keys - cache_keys
+    orphaned_caches = cache_keys - download_keys
+
+    # Remove orphaned downloads
+    for key in orphaned_downloads:
+        try:
+            os.remove(os.path.join(download_dir, f"{key}.mp3"))
+            application.logger.info(f"Removed orphaned download: {key}.mp3")
+        except Exception as e:
+            application.logger.error(f"Error removing orphaned download {key}.mp3: {e}")
+
+    # Remove orphaned cache files
+    for key in orphaned_caches:
+        try:
+            os.remove(os.path.join(cache_dir, f"{key}.json"))
+            application.logger.info(f"Removed orphaned cache file: {key}.json")
+        except Exception as e:
+            application.logger.error(f"Error removing orphaned cache {key}.json: {e}")
+            
+    # Validate remaining cache files
+    for key in cache_keys - orphaned_caches:
+        cache_file = os.path.join(cache_dir, f"{key}.json")
+        try:
+            with open(cache_file, 'r') as f:
+                json.load(f)
+        except json.JSONDecodeError:
+            application.logger.warning(f"Removing corrupt cache file: {key}.json")
+            try:
+                os.remove(cache_file)
+                # Also remove the corresponding mp3, as we can't trust the cached data
+                mp3_file = os.path.join(download_dir, f"{key}.mp3")
+                if os.path.exists(mp3_file):
+                    os.remove(mp3_file)
+                    application.logger.info(f"Also removed corresponding mp3 for corrupt cache: {key}.mp3")
+            except Exception as e:
+                application.logger.error(f"Error removing corrupt cache file {key}.json: {e}")
+
+    application.logger.info("Startup cleanup finished.")
+
+
+# Call cleanup at startup
+cleanup_on_startup()
+
 def get_cache_key(youtube_url):
     video_id = None
     patterns = [r'(?:youtube\.com/watch\?v=|youtu\.be/)([\w-]+)', r'youtube\.com/shorts/([\w-]+)']
