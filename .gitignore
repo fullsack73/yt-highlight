@@ -33,7 +33,7 @@ cache/*
 uploads/*
 
 # Elastic Beanstalk Files
-.elasticbeanstalk/*
+.elasticbeanstalk
 !.elasticbeanstalk/*.cfg.yml
 !.elasticbeanstalk/*.global.yml
 
