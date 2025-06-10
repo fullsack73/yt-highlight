@@ -7,6 +7,8 @@ import traceback
 import hashlib
 import json
 import re
+import shutil
+import tempfile
 from concurrent.futures import ThreadPoolExecutor
 
 import librosa
@@ -75,41 +77,71 @@ def save_to_cache(cache_key, data):
     with open(cache_file, 'w') as f: json.dump(data, f, indent=2)
 
 def download_audio(youtube_url, output_path='.'):
-    try:
-        output_template = os.path.join(output_path, '%(id)s.%(ext)s')
-        ydl_opts = {
-            'format': 'worstaudio/worst',
-            'outtmpl': output_template,
-            'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '64'}],
-            'quiet': True, 'noplaylist': True, 'socket_timeout': 60, 'retries': 3,
-            'nocheckcertificate': True, 'ignoreerrors': False, 'throttledratelimit': 1024*1024,
-            'sleep_interval_requests': 2, 'max_sleep_interval': 5,
-            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
-        }
-        if COOKIE_FILE_PATH and os.path.exists(COOKIE_FILE_PATH):
-            ydl_opts['cookiefile'] = COOKIE_FILE_PATH
-            print(f"[DOWNLOAD] Using cookie file from: {COOKIE_FILE_PATH}")
-        else:
-            print(f"[DOWNLOAD_WARNING] Cookie file not found at {COOKIE_FILE_PATH}. Proceeding without cookies.")
-
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info_dict = ydl.extract_info(youtube_url, download=True)
-            final_filepath = None
-            if 'requested_downloads' in info_dict and info_dict['requested_downloads']:
-                final_filepath = info_dict['requested_downloads'][0].get('filepath')
-            elif 'filepath' in info_dict:
-                final_filepath = info_dict.get('filepath')
-            if final_filepath and os.path.exists(final_filepath):
-                 print(f"[DOWNLOAD] Success. Final file is at: {final_filepath}")
-                 return final_filepath
+    # EB-FIX: Use a temporary directory for each download to prevent race conditions
+    # in multi-worker environments like Elastic Beanstalk.
+    with tempfile.TemporaryDirectory() as tmpdir:
+        try:
+            # Set yt-dlp to download to the temporary directory
+            output_template = os.path.join(tmpdir, '%(id)s.%(ext)s')
+            
+            ydl_opts = {
+                'format': 'worstaudio/worst',
+                'outtmpl': output_template,
+                'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '64'}],
+                'quiet': True, 'noplaylist': True, 'socket_timeout': 60, 'retries': 3,
+                'nocheckcertificate': True, 'ignoreerrors': False, 'throttledratelimit': 1024*1024,
+                'sleep_interval_requests': 2, 'max_sleep_interval': 5,
+                'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+            }
+            
+            if COOKIE_FILE_PATH and os.path.exists(COOKIE_FILE_PATH):
+                ydl_opts['cookiefile'] = COOKIE_FILE_PATH
+                print(f"[DOWNLOAD] Using cookie file from: {COOKIE_FILE_PATH}")
             else:
-                 print(f"[DOWNLOAD_ERROR] yt-dlp finished, but the final file could not be found.")
-                 print(f"Final info_dict for debugging: {info_dict}")
-                 raise Exception("Could not find the final audio file after processing.")
-    except Exception as e:
-        print(f"[DOWNLOAD_ERROR] Critical failure in download_audio: {e}")
-        traceback.print_exc()
-        raise
+                print(f"[DOWNLOAD_WARNING] Cookie file not found at {COOKIE_FILE_PATH}. Proceeding without cookies.")
+
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info_dict = ydl.extract_info(youtube_url, download=True)
+                
+                temp_filepath = None
+                # After postprocessing, yt-dlp provides the final path in 'requested_downloads'
+                if 'requested_downloads' in info_dict and info_dict['requested_downloads']:
+                    temp_filepath = info_dict['requested_downloads'][0].get('filepath')
+                
+                if not temp_filepath or not os.path.exists(temp_filepath):
+                    # Fallback: construct the path if yt-dlp doesn't provide it directly
+                    video_id = info_dict.get('id')
+                    if video_id:
+                        # The file should have been converted to mp3
+                        expected_filename = f"{video_id}.mp3"
+                        temp_filepath = os.path.join(tmpdir, expected_filename)
+
+                if temp_filepath and os.path.exists(temp_filepath):
+                    # Move the final MP3 from temp dir to the persistent UPLOAD_FOLDER
+                    final_filename = os.path.basename(temp_filepath)
+                    final_destination = os.path.join(output_path, final_filename)
+                    
+                    # Ensure the destination directory exists
+                    os.makedirs(output_path, exist_ok=True)
+                    
+                    # Move the file
+                    shutil.move(temp_filepath, final_destination)
+                    
+                    print(f"[DOWNLOAD] Success. Final file moved to: {final_destination}")
+                    return final_destination
+                else:
+                    print(f"[DOWNLOAD_ERROR] Post-processed file not found in temp directory. Files: {os.listdir(tmpdir)}")
+                    return None
+
+        except yt_dlp.utils.DownloadError as e:
+            print(f"[DOWNLOAD_ERROR] yt-dlp download error: {e}")
+            if "HTTP Error 429" in str(e):
+                print("[DOWNLOAD_ERROR] Received HTTP 429: Too Many Requests. The server is being rate-limited.")
+            return None
+        except Exception as e:
+            print(f"[DOWNLOAD_ERROR] Critical failure in download_audio: {e}")
+            traceback.print_exc()
+            return None
 
 def calculate_energy(y, frame_length, hop_length):
     if len(y) < frame_length: return np.array([])
