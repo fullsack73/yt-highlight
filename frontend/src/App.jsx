@@ -46,7 +46,7 @@ function App() {
 
     try {
       console.log('Attempting to start background analysis via POST /api/process-youtube');
-      const startResponse = await fetch('/api/process-youtube', {
+      const startResponse = await fetch('http://localhost:5000/api/process-youtube', {
         method: 'POST',
         mode: 'cors',
         headers: {
@@ -100,7 +100,7 @@ function App() {
         console.log(`Polling attempt ${attempts}/${maxAttempts}`);
 
         try {
-          const statusUrl = `/api/analysis-status?youtube_url=${encodeURIComponent(urlForAnalysis)}`;
+          const statusUrl = `http://localhost:5000/api/analysis-status?youtube_url=${encodeURIComponent(urlForAnalysis)}`;
           const statusRes = await fetch(statusUrl, { mode: 'cors' });
           console.log(`GET /api/analysis-status response code: ${statusRes.status}`);
 
@@ -144,7 +144,7 @@ function App() {
             // polling = false; 
             // 아래는 기존 재시도 로직 (필요시 주석 해제)
             try {
-              const restartRes = await fetch('/api/process-youtube', {
+              const restartRes = await fetch('http://localhost:5000/api/process-youtube', {
                 method: 'POST',
                 mode: 'cors',
                 headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
@@ -191,7 +191,7 @@ function App() {
     setMostReplayedData(null);
 
     try {
-      const response = await fetch(`/api/get-most-replayed?url=${encodeURIComponent(youtubeUrl)}`, {
+      const response = await fetch(`http://localhost:5000/api/get-most-replayed?url=${encodeURIComponent(youtubeUrl)}`, {
         method: 'GET',
         mode: 'cors',
         headers: {
@@ -215,6 +215,7 @@ function App() {
       const data = await response.json();
       if (data.status === 'success') {
         console.log("App.js: Most Replayed data fetched successfully:", data);
+        console.log("[Debug] Most Replayed Data Received:", data);
         setMostReplayedData(data);
       } else if (data.status === 'error') {
         console.log(`App.js: Most Replayed data not found (API reported error): ${data.message}`);
