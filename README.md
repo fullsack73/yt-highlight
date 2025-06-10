@@ -1,26 +1,50 @@
-yt-highlight 프로젝트 배포 문제 해결 기록: YouTube 다운로드 차단 현상
-1. 현재 상황 요약
-프로젝트 목표: 사용자가 YouTube 영상 주소를 입력하면, 서버가 해당 영상을 분석하여 하이라이트 구간을 찾아주는 웹 서비스입니다.
-배포 상태: 웹사이트의 기본 화면(프론트엔드)은 정상적으로 표시되며, 서버도 꺼지지 않고 동작 중입니다 (Health: Ok).
-발생 문제: 사용자가 영상 분석을 시작하면, 잠시 후 "분석 실패(Analysis failed)" 라는 에러 메시지가 표시됩니다.
-2. 문제의 근본 원인: "로봇이냐, 사람이냐?"
-이 문제의 핵심은 우리 서버가 YouTube에게 "너는 자동화된 로봇(Bot)이니 접속을 차단하겠다"라는 메시지를 받고 있기 때문입니다.
-어떻게 이런 일이 발생할까요?
-서버의 역할: 우리 서버(AWS EC2 인스턴스)는 사용자의 요청을 받으면, yt-dlp라는 도구를 사용해 YouTube 서버에 접속하여 영상의 오디오를 다운로드해야 합니다.
-YouTube의 방어 시스템: YouTube와 같은 대형 서비스는 자동화된 프로그램(봇)이 서버 자원을 과도하게 사용하거나 데이터를 무단으로 수집하는 것을 막기 위해 매우 정교한 방어 시스템을 갖추고 있습니다.
-데이터센터 IP의 한계: 우리 서버는 AWS 데이터센터라는, 수많은 서버들이 모여있는 곳에 있습니다. 이런 데이터센터의 IP 주소에서 오는 요청은 일반 가정집에서 사람이 직접 접속하는 것보다 '봇'으로 의심받을 확률이 훨씬 높습니다.
-결과: 우리 서버가 영상 다운로드를 요청하자, YouTube는 "이 요청은 데이터센터에서 온 자동화된 요청이군. 봇일 가능성이 높으니, 사람이 맞다면 로그인해서 인증해라"라며 요청을 차단합니다. 이것이 로그에 남는 Sign in to confirm you’re not a bot 에러의 정체입니다.
-3. 시도했던 해결책: "사람인 척하기" 위한 쿠키 사용
-이 문제를 해결하기 위한 가장 일반적인 방법은 **"쿠키(Cookie)"**를 사용하는 것입니다.
-쿠키란?: 우리가 웹사이트에 로그인하면, 브라우저는 "나 누구인데 로그인했다"는 일종의 '출입증'을 받게 되는데 이것이 쿠키입니다. 이 출입증을 요청과 함께 보내면, 서버는 우리가 누구인지 알고 맞춤형 서비스를 제공합니다.
-우리의 전략: 개발자의 PC 브라우저에서 직접 YouTube에 로그인한 후, 이 '출입증'(쿠키)을 복사해서 우리 서버에 심어주는 것입니다. 그러면 우리 서버가 YouTube에 접속할 때 이 출입증을 함께 제시하여, "나는 봇이 아니라, 로그인된 진짜 사람이야"라고 주장할 수 있습니다.
-하지만, 이 해결책이 아직 동작하지 않고 있습니다.
-현재 문제: 분명히 쿠키 정보를 서버에 전달하도록 설정했지만, 서버 로그를 보면 "쿠키 파일을 찾을 수 없다" (Cookie file not found) 는 경고 메시지가 계속 출력되고 있습니다.
-추정 원인: 서버에 파일을 배포하는 과정(eb deploy)이 복잡하고, 우리가 지정한 위치에 쿠키 파일이 제대로 생성되지 않고 있습니다. 서버 환경의 경로 문제, 파일 권한 문제, 또는 설정 파일의 미세한 오류 등이 원인으로 보입니다.
-4. 남은 과제 및 다음 단계
-남은 과제는 단 하나입니다: "어떻게 하면 쿠키 파일을 서버가 100% 확실하게 읽을 수 있는 위치에, 정확한 내용으로 전달할 것인가?"
-다음 해결 전략:
-가장 확실한 파일 전달 방식 사용: AWS Elastic Beanstalk의 설정 파일(.ebextensions)에 쿠키 파일의 내용 자체를 직접 삽입하는 방법을 시도할 것입니다.
-이 방법은 배포 시점에 외부 요인(S3, 환경 변수 등)과 상관없이 Beanstalk이 직접 EC2 서버 내의 특정 경로(예: /tmp/youtube_cookies.txt)에 파일을 생성해 주기 때문에, 경로 문제를 원천적으로 차단할 수 있습니다.
-서버 코드는 이 약속된 경로(/tmp/youtube_cookies.txt)만 바라보도록 수정하여 복잡성을 완전히 제거합니다.
-이 마지막 단계를 통해 쿠키 전달 문제를 해결하고, YouTube의 봇 차단을 우회하여 정상적인 서비스 운영을 목표로 하고 있습니다.
+# YouTube Highlight Finder
+
+This web application automatically identifies and showcases the most replayed moments in any YouTube video. Users can simply paste a YouTube URL to quickly see the highlights, making it easy to jump to the most interesting parts of a video.
+
+**Live Demo:** [http://yt-hl-env-dev.eba-metdnuyc.ap-northeast-2.elasticbeanstalk.com/](http://yt-hl-env-dev.eba-metdnuyc.ap-northeast-2.elasticbeanstalk.com/)
+
+## Features
+
+- **Automatic Highlight Detection:** Analyzes video audio to find moments of high energy and excitement.
+- **YouTube Heatmap Integration:** Fetches and displays YouTube's own "most replayed" data for a more accurate view of popular moments.
+- **Interactive Timeline:** Clickable timestamps allow users to jump directly to highlights in the video.
+- **Responsive Design:** A clean and modern interface built with React that works on both desktop and mobile devices.
+- **Background Processing:** Heavy analysis tasks are run in the background to keep the UI responsive.
+
+## How It Works
+
+1.  **URL Input:** The user pastes a YouTube video URL into the input field on the React frontend.
+2.  **Backend Request:** The frontend sends the URL to the Flask backend API.
+3.  **Audio Download:** The backend uses `yt-dlp` to download the audio stream of the video.
+4.  **Audio Analysis:** The audio is analyzed using the `librosa` library to calculate sound energy and identify peaks, which correspond to potential highlights.
+5.  **Heatmap Data:** The server also fetches the "most replayed" heatmap data directly from YouTube's internal APIs.
+6.  **Results:** The identified timestamps and heatmap data are sent back to the frontend and displayed on an interactive timeline.
+
+## Tech Stack
+
+-   **Frontend:**
+    -   React
+    -   Vite
+    -   JavaScript (ES6+)
+-   **Backend:**
+    -   Python 3
+    -   Flask (as the web framework)
+    -   Gunicorn (as the WSGI server)
+    -   `yt-dlp` (for downloading YouTube audio)
+    -   `librosa` & `numpy` (for audio analysis)
+-   **Deployment:**
+    -   AWS Elastic Beanstalk
+    -   `ffmpeg` (installed via `.ebextensions` for audio processing)
+
+## Project Structure
+
+```
+/
+├── frontend/         # React source code
+├── dist/             # Compiled React frontend, served by Flask
+├── application.py    # Main Flask backend logic
+├── requirements.txt  # Python dependencies
+├── Procfile          # Specifies the command to run the app on Elastic Beanstalk
+└── .ebextensions/    # Elastic Beanstalk configuration files (e.g., for installing ffmpeg)
+```
