@@ -1,3 +1,4 @@
+#yt-hl/application.py
 import os
 import sys
 import time
@@ -23,7 +24,10 @@ COOKIE_FILE_PATH = '/tmp/cookies.txt'
 
 # Flask 앱 초기화
 application = Flask(__name__, static_folder='frontend/dist', static_url_path='')
-application.config['UPLOAD_FOLDER'] = '/tmp/yt-hl-uploads'
+
+### EB-FIX 1: Define an absolute path for downloads on the server.
+DOWNLOAD_DIRECTORY = '/var/app/current/downloads'
+application.config['UPLOAD_FOLDER'] = DOWNLOAD_DIRECTORY # Use the same path for uploads/downloads
 application.config['CACHE_FOLDER'] = '/tmp/yt-hl-cache'
 
 
@@ -48,6 +52,7 @@ def handle_exception(e):
 
 # --- 3. 폴더 생성 및 헬퍼 함수 ---
 
+# The .ebextensions script will create this directory, but it's good practice to have it here too.
 os.makedirs(application.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs(application.config['CACHE_FOLDER'], exist_ok=True)
 
@@ -96,13 +101,12 @@ def download_audio(youtube_url, output_path='.'):
             'retries': 3,
             'nocheckcertificate': True,
             'ignoreerrors': False,
-            'throttledratelimit': 1024*1024, # 다운로드 속도를 1MB/s로 제한 (너무 빠르면 봇으로 의심)
-            'sleep_interval_requests': 2,    # 각 요청 사이에 2초 대기
-            'max_sleep_interval': 5,         # 문제가 생겼을 때 최대 5초까지 대기
+            'throttledratelimit': 1024*1024,
+            'sleep_interval_requests': 2,
+            'max_sleep_interval': 5,
             'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
         }
 
-        # Use the COOKIE_FILE_PATH defined at the top of the file (e.g., /tmp/cookies.txt)
         if COOKIE_FILE_PATH and os.path.exists(COOKIE_FILE_PATH):
             ydl_opts['cookiefile'] = COOKIE_FILE_PATH
             print(f"[DOWNLOAD] Using cookie file from: {COOKIE_FILE_PATH}")
@@ -110,7 +114,6 @@ def download_audio(youtube_url, output_path='.'):
             print(f"[DOWNLOAD_WARNING] Cookie file not found at {COOKIE_FILE_PATH} or path is not set. Proceeding without cookies.")
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # 먼저 메타데이터만 가져와서 예상 파일 경로를 만듭니다.
             info_dict = ydl.extract_info(youtube_url, download=False)
             video_id = info_dict.get('id')
             if not video_id:
@@ -118,15 +121,12 @@ def download_audio(youtube_url, output_path='.'):
             
             expected_filepath = os.path.join(output_path, f"{video_id}.mp3")
 
-            # 실제 다운로드 실행
             ydl.download([youtube_url])
 
-            # 다운로드 후 예상 경로에 파일이 있는지 확인
             if os.path.exists(expected_filepath):
                 print(f"[DOWNLOAD] Success. File path: {expected_filepath}")
                 return expected_filepath
             else:
-                # 다운로드된 파일의 실제 경로를 info_dict에서 다시 확인 (폴백)
                 if 'requested_downloads' in info_dict and info_dict['requested_downloads']:
                     actual_filepath = info_dict['requested_downloads'][0].get('filepath')
                     if actual_filepath and os.path.exists(actual_filepath):
@@ -138,7 +138,7 @@ def download_audio(youtube_url, output_path='.'):
     except Exception as e:
         print(f"[DOWNLOAD_ERROR] Critical failure in download_audio: {e}")
         traceback.print_exc()
-        raise  # 에러를 그대로 다시 던져서 상위 함수에서 처리하도록 함
+        raise
 
 
 def calculate_energy(y, frame_length, hop_length):
@@ -174,17 +174,13 @@ def get_highlights(audio_path, max_highlights=15, target_sr=16000):
         return []
 
 def background_analysis_task(url, key, force_processing_flag):
-    """(★핵심 수정 부분★) 오디오 다운로드와 분석을 처리하는 백그라운드 작업"""
     audio_filepath = None
     try:
-        # 1. 오디오 다운로드를 먼저 시도
+        ### EB-FIX 2: Use the absolute DOWNLOAD_DIRECTORY for saving the file.
         audio_filepath = download_audio(url, application.config['UPLOAD_FOLDER'])
         
-        # 2. 다운로드 성공 시에만 하이라이트 분석 실행
-        # (download_audio에서 실패하면 Exception이 발생하여 바로 except 블록으로 넘어감)
         audio_highlights = get_highlights(audio_filepath)
         
-        # 3. 성공 결과 캐시
         result_data = {
             'status': 'success',
             'message': 'Analysis complete.',
@@ -194,7 +190,6 @@ def background_analysis_task(url, key, force_processing_flag):
         save_to_cache(key, result_data)
 
     except Exception as e:
-        # 4. 다운로드 또는 분석 중 أي 에러가 발생하면 실패 결과 캐시
         print(f"[BG_TASK_ERROR] for key {key}: {e}")
         traceback.print_exc()
         error_data = {
@@ -205,13 +200,8 @@ def background_analysis_task(url, key, force_processing_flag):
         save_to_cache(key, error_data)
         
     finally:
-        # 5. 파일이 실제로 생성되었을 경우에만 삭제
-        if audio_filepath and os.path.exists(audio_filepath):
-            try:
-                os.remove(audio_filepath)
-            except OSError as e:
-                print(f"Error removing file {audio_filepath}: {e}")
-        
+        # File deletion is handled here. We leave the files for download.
+        # If you want to auto-delete, you'd need a separate cleanup mechanism.
         if key in application.audio_analysis_futures:
             del application.audio_analysis_futures[key]
 
@@ -245,12 +235,21 @@ def analysis_status_endpoint():
     return jsonify({'status': 'not_started', 'message': 'Analysis not initiated or result is missing.'})
 
 
-# --- 5. Health Check 및 React 앱 서빙 (최종 수정안) ---
+# --- 5. Health Check 및 File/App 서빙 ---
 
 @application.route('/health')
 def health_check():
     """ELB Health-Check를 위한 전용 엔드포인트."""
     return jsonify(status="ok"), 200
+
+### EB-FIX 3: Add a dedicated route to serve downloaded files.
+@application.route('/download/<path:filename>')
+def download_file(filename):
+    """Serves a file from the DOWNLOAD_DIRECTORY."""
+    try:
+        return send_from_directory(DOWNLOAD_DIRECTORY, filename, as_attachment=True)
+    except FileNotFoundError:
+        return "File not found.", 404
 
 @application.route('/', defaults={'path': ''})
 @application.route('/<path:path>')
