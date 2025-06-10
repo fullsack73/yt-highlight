@@ -314,7 +314,7 @@ const VideoInput = ({ onVideoSubmit, children }) => {
             />
           </form>
           {/* 에러 메시지 표시 */}
-          {error && <p className="error-message">{error}</p>}
+          {error && <div className="error-message">{error}</div>}
           {/* 자식 컴포넌트 렌더링 */}
           {children}
         </div>
