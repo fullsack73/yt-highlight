@@ -186,6 +186,12 @@ def analysis_status_endpoint():
         return jsonify({'status': 'processing', 'message': 'Analysis ongoing.'})
     return jsonify({'status': 'not_started', 'message': 'Analysis not initiated or result is missing.'})
 
+def format_ms_to_time_string(ms_string: str):
+    if ms_string is None or not isinstance(ms_string, (str, int)) or (isinstance(ms_string, str) and not ms_string.isdigit()): return "N/A"
+    ms = int(ms_string)
+    seconds_total = ms // 1000
+    return f"{seconds_total // 60:02d}:{seconds_total % 60:02d}"
+
 def get_youtube_most_replayed_heatmap_data(video_id: str):
     print(f"[Heatmap] Fetching Most Replayed data for video_id: {video_id}")
     video_url = f"https://www.youtube.com/watch?v={video_id}"
