@@ -186,6 +186,159 @@ def analysis_status_endpoint():
         return jsonify({'status': 'processing', 'message': 'Analysis ongoing.'})
     return jsonify({'status': 'not_started', 'message': 'Analysis not initiated or result is missing.'})
 
+def get_youtube_most_replayed_heatmap_data(video_id: str):
+    print(f"[Heatmap] Fetching Most Replayed data for video_id: {video_id}")
+    video_url = f"https://www.youtube.com/watch?v={video_id}"
+    try:
+        headers = {"User-Agent": "Mozilla/5.0", "Accept-Language": "en-US,en;q=0.9,ko-KR;q=0.8,ko;q=0.7"}
+        response = requests.get(video_url, headers=headers, timeout=20)
+        response.raise_for_status()
+        html_content = response.text
+        match = (re.search(r"var\s+ytInitialData\s*=\s*({.*?});\s*</script>", html_content) or
+                 re.search(r"window\[\"ytInitialData\"\]\s*=\s*({.*?});", html_content) or
+                 re.search(r"var ytInitialData\s*=\s*({.*?});", html_content))
+        if not match:
+            print(f"[Heatmap] Detailed Error: Could not find ytInitialData in the page for video_id: {video_id}")
+            return "Error: Could not find ytInitialData in the page."
+        initial_data = json.loads(match.group(1))
+
+        heatmap_markers_list = None
+        most_replayed_label_info = None
+        
+        # Primary parsing attempt (playerOverlays)
+        try:
+            print(f"[Heatmap Primary] Parsing ytInitialData (playerOverlays) for heatmap data for video_id: {video_id}")
+            markers_map_list = initial_data.get('playerOverlays', {}).get('playerOverlayRenderer', {}).get('decoratedPlayerBarRenderer', {}).get('decoratedPlayerBarRenderer', {}).get('playerBar', {}).get('multiMarkersPlayerBarRenderer', {}).get('markersMap', [])
+            print(f"[Heatmap Primary] Found markersMap with {len(markers_map_list)} items for video_id: {video_id}")
+            for item in markers_map_list:
+                heatmap_renderer = item.get('value', {}).get('heatmap', {}).get('heatmapRenderer')
+                if heatmap_renderer:
+                    current_markers = heatmap_renderer.get('heatMarkers', [])
+                    if current_markers: # Only assign if non-empty
+                        heatmap_markers_list = current_markers
+                        print(f"[Heatmap Primary] Found heatMarkers with {len(heatmap_markers_list)} markers for video_id: {video_id}")
+                    if heatmap_renderer.get('heatMarkersDecorations'):
+                        print(f"[Heatmap Primary] Found heatMarkersDecorations for video_id: {video_id}")
+                        for deco_container in heatmap_renderer['heatMarkersDecorations']:
+                            deco_renderer = deco_container.get('heatMarkerDecorationRenderer', {})
+                            timed_deco = deco_renderer.get('timedMarkerDecorationRenderer', {})
+                            label_runs = timed_deco.get('label', {}).get('label', {}).get('runs')
+                            label_text = label_runs[0].get('text') if label_runs else None
+                            deco_time_ms = (deco_renderer.get('visibleOnLoadMarkerDecorationRenderer', {}).get('markerTiming', {}).get('startOffsetMillis') or
+                                            timed_deco.get('decorationTimeMillis'))
+                            if label_text and deco_time_ms is not None:
+                                most_replayed_label_info = {"label_text": label_text, "decoration_time_millis": str(deco_time_ms)}
+                                print(f"[Heatmap Primary] Found most_replayed_label_info: {label_text} at {deco_time_ms}ms for video_id: {video_id}")
+                                break # Found label, break from decorations loop
+                    if heatmap_markers_list: break # Found markers, break from markersMap loop
+        except Exception as e: 
+            print(f"[Heatmap Primary] Error navigating primary ytInitialData (playerOverlays): {e} for video_id: {video_id}")
+            traceback.print_exc()
+
+        # Fallback parsing attempt (frameworkUpdates) if primary failed
+        if not heatmap_markers_list and 'frameworkUpdates' in initial_data:
+            print(f"[Heatmap Fallback] Primary path failed. Trying fallback path in frameworkUpdates for video_id: {video_id}")
+            try:
+                mutations = initial_data['frameworkUpdates'].get('entityBatchUpdate', {}).get('mutations', [])
+                if not mutations:
+                    print(f"[Heatmap Fallback] 'mutations' not found or empty in frameworkUpdates for video_id: {video_id}")
+                
+                for mutation_idx, mutation in enumerate(mutations):
+                    print(f"[Heatmap Fallback] Inspecting mutation {mutation_idx} for video_id: {video_id}")
+                    payload = mutation.get('payload', {})
+                    macro_markers_entity = payload.get('macroMarkersListEntity', {})
+                    markers_list_data = macro_markers_entity.get('markersList', {})
+
+                    if markers_list_data.get('markerType') == 'MARKER_TYPE_HEATMAP':
+                        print(f"[Heatmap Fallback] Found 'macroMarkersListEntity' with 'MARKER_TYPE_HEATMAP' in mutation {mutation_idx} for video_id: {video_id}")
+                        
+                        current_fallback_markers = markers_list_data.get('markers', [])
+                        if current_fallback_markers:
+                            heatmap_markers_list = current_fallback_markers
+                            print(f"[Heatmap Fallback] Extracted {len(heatmap_markers_list)} markers from frameworkUpdates for video_id: {video_id}")
+
+                        decorations_container = markers_list_data.get('markersDecoration', {}).get('timedMarkerDecorations', [])
+                        if decorations_container and isinstance(decorations_container, list) and len(decorations_container) > 0:
+                            first_decoration = decorations_container[0]
+                            if isinstance(first_decoration, dict):
+                                label_runs = first_decoration.get('label', {}).get('runs', [])
+                                if label_runs and len(label_runs) > 0:
+                                    label_text = label_runs[0].get('text', 'Unknown Label')
+                                    decoration_time = first_decoration.get('decorationTimeMillis')
+                                    if label_text and decoration_time is not None:
+                                        most_replayed_label_info = {
+                                            "label_text": label_text,
+                                            "decoration_time_millis": str(decoration_time)
+                                        }
+                                        print(f"[Heatmap Fallback] Extracted most_replayed_label_info from frameworkUpdates: {label_text} for video_id: {video_id}")
+                        
+                        if heatmap_markers_list: # If we found markers from this mutation, we can stop
+                            print(f"[Heatmap Fallback] Successfully extracted data from frameworkUpdates mutation {mutation_idx}. Breaking loop.")
+                            break 
+                if not heatmap_markers_list:
+                    print(f"[Heatmap Fallback] Did not find heatmap markers after checking all mutations in frameworkUpdates for video_id: {video_id}")
+            except Exception as e:
+                print(f"[Heatmap Fallback] Error during frameworkUpdates parsing: {e} for video_id: {video_id}")
+                traceback.print_exc()
+
+        # Process whatever was found (either from primary or fallback)
+        if heatmap_markers_list:
+            valid_markers = [m for m in heatmap_markers_list if isinstance(m, dict) and all(k in m for k in ['intensityScoreNormalized', 'startMillis', 'durationMillis'])]
+            print(f"[Heatmap] Found {len(valid_markers)}/{len(heatmap_markers_list) if heatmap_markers_list else 0} valid markers for video_id: {video_id}")
+            highest_intensity_marker = None
+            if valid_markers: # Ensure valid_markers is not empty
+                highest_intensity_marker = max(valid_markers, key=lambda x: float(x['intensityScoreNormalized']), default=None)
+            
+            if highest_intensity_marker:
+                print(f"[Heatmap] Found highest_intensity_marker with score {highest_intensity_marker.get('intensityScoreNormalized')} for video_id: {video_id}")
+                for k in ['startMillis', 'durationMillis']: # Ensure these are strings
+                    if k in highest_intensity_marker and highest_intensity_marker[k] is not None:
+                        highest_intensity_marker[k] = str(highest_intensity_marker[k])
+                        
+            # Create a separate marker for the labeled Most Replayed point if it exists
+            most_replayed_label_marker = None
+            if most_replayed_label_info and 'decoration_time_millis' in most_replayed_label_info:
+                most_replayed_label_marker = {
+                    'startMillis': most_replayed_label_info['decoration_time_millis'],
+                    'durationMillis': '5000',  # Default 5 seconds duration
+                    'intensityScoreNormalized': '0.9'  # High but might not be the highest
+                }
+                print(f"[Heatmap] Created most_replayed_label_marker at {most_replayed_label_marker['startMillis']}ms for video_id: {video_id}")
+            
+            # It's possible to have heatmap_markers_list but not highest_intensity_marker (if all markers are invalid)
+            # or not most_replayed_label_info. The original check was: if not highest_intensity_marker and not most_replayed_label_info:
+            # This means if EITHER is missing, it's not an error. An error is only if BOTH are missing AND we had markers to begin with.
+            # However, the frontend might expect at least one. Let's adjust the logic slightly: if we have markers, but extracted nothing useful, it's an issue.
+            if not valid_markers and not most_replayed_label_info: # If we had markers but none were valid, and no label
+                print(f"[Heatmap] Detailed Error: Heatmap markers were found, but no valid marker details or label info could be extracted for video_id: {video_id}")
+                return "Error: Heatmap data found, but key details are missing."
+
+            result = {"video_id": video_id, "most_replayed_label": most_replayed_label_info, "most_replayed_label_marker_data": most_replayed_label_marker, "highest_intensity_marker_data": highest_intensity_marker}
+            if most_replayed_label_info and 'decoration_time_millis' in most_replayed_label_info:
+                 result['most_replayed_label']['formatted_time'] = format_ms_to_time_string(most_replayed_label_info['decoration_time_millis'])
+            if highest_intensity_marker and 'startMillis' in highest_intensity_marker and 'durationMillis' in highest_intensity_marker:
+                result['highest_intensity_marker_data']['formatted_start_time'] = format_ms_to_time_string(highest_intensity_marker['startMillis'])
+                result['highest_intensity_marker_data']['formatted_duration'] = format_ms_to_time_string(highest_intensity_marker['durationMillis'])
+            
+            print(f"[Heatmap] Successfully extracted heatmap data (possibly partial) for {video_id}.")
+            return result
+            
+        print(f"[Heatmap] Detailed Error: Heatmap data not found in any expected structure (primary or fallback) for video_id: {video_id}")
+        return "Error: Heatmap data not found in any expected structure."
+    except requests.exceptions.Timeout: 
+        print(f"[Heatmap] Detailed Error: Request timed out for {video_url}")
+        return f"Error: Request timed out for {video_url}"
+    except requests.exceptions.RequestException as e: 
+        print(f"[Heatmap] Detailed Error: Request failed for {video_url}: {e}")
+        return f"Error: Request failed for {video_url}: {e}"
+    except json.JSONDecodeError: 
+        print(f"[Heatmap] Detailed Error: Failed to parse JSON from page for {video_url}")
+        return f"Error: Failed to parse JSON from page for {video_url}."
+    except Exception as e: 
+        print(f"[Heatmap] Unexpected error for {video_url}: {e}") 
+        traceback.print_exc()
+        return f"Error: Unexpected: {e}"
+
 ### EB-FIX: RESTORED THE MISSING API ENDPOINT ###
 @application.route('/api/get-most-replayed', methods=['GET'])
 def get_most_replayed_endpoint():
