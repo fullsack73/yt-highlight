@@ -50,7 +50,6 @@ def handle_exception(e):
 os.makedirs(application.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs(application.config['CACHE_FOLDER'], exist_ok=True)
 
-# (All helper functions below this are unchanged)
 def get_cache_key(youtube_url):
     video_id = None
     patterns = [r'(?:youtube\.com/watch\?v=|youtu\.be/)([\w-]+)', r'youtube\.com/shorts/([\w-]+)']
@@ -75,11 +74,7 @@ def save_to_cache(cache_key, data):
     cache_file = os.path.join(application.config['CACHE_FOLDER'], f"{cache_key}.json")
     with open(cache_file, 'w') as f: json.dump(data, f, indent=2)
 
-### EB-FIX: A more robust download function ###
 def download_audio(youtube_url, output_path='.'):
-    """
-    Downloads and converts audio in one atomic operation, returning the final file path.
-    """
     try:
         output_template = os.path.join(output_path, '%(id)s.%(ext)s')
         ydl_opts = {
@@ -98,24 +93,16 @@ def download_audio(youtube_url, output_path='.'):
             print(f"[DOWNLOAD_WARNING] Cookie file not found at {COOKIE_FILE_PATH}. Proceeding without cookies.")
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # Perform download and get the final, post-processed info dict in one call.
-            # This is more robust than getting info first.
             info_dict = ydl.extract_info(youtube_url, download=True)
-            
             final_filepath = None
-            # The final path is usually in 'requested_downloads' after post-processing
             if 'requested_downloads' in info_dict and info_dict['requested_downloads']:
                 final_filepath = info_dict['requested_downloads'][0].get('filepath')
-            # Fallback for different yt-dlp versions or flows
             elif 'filepath' in info_dict:
                 final_filepath = info_dict.get('filepath')
-
-            # The ultimate verification: does the file exist on disk?
             if final_filepath and os.path.exists(final_filepath):
                  print(f"[DOWNLOAD] Success. Final file is at: {final_filepath}")
                  return final_filepath
             else:
-                 # If we get here, something went wrong and the file is missing.
                  print(f"[DOWNLOAD_ERROR] yt-dlp finished, but the final file could not be found.")
                  print(f"Final info_dict for debugging: {info_dict}")
                  raise Exception("Could not find the final audio file after processing.")
@@ -172,7 +159,6 @@ def background_analysis_task(url, key, force_processing_flag):
         error_data = {'status': 'error', 'message': f"Analysis failed: {str(e)}", 'timestamp': time.time()}
         save_to_cache(key, error_data)
     finally:
-        # Leaving the file for download.
         if key in application.audio_analysis_futures:
             del application.audio_analysis_futures[key]
 
@@ -199,6 +185,77 @@ def analysis_status_endpoint():
     if cache_key in application.audio_analysis_futures and not application.audio_analysis_futures[cache_key].done():
         return jsonify({'status': 'processing', 'message': 'Analysis ongoing.'})
     return jsonify({'status': 'not_started', 'message': 'Analysis not initiated or result is missing.'})
+
+### EB-FIX: RESTORED THE MISSING API ENDPOINT ###
+@application.route('/api/get-most-replayed', methods=['GET'])
+def get_most_replayed_endpoint():
+    print(f"\n[API GET /api/get-most-replayed] Called at {time.ctime()}")
+    youtube_url = request.args.get('url')
+    if not youtube_url:
+        return jsonify({'status': 'error', 'message': 'YouTube URL is required.'}), 400
+
+    video_id_for_heatmap = None
+    patterns = [r'(?:youtube\.com/watch\?v=|youtu\.be/)([\w-]+)', r'youtube\.com/shorts/([\w-]+)']
+    for pattern in patterns:
+        match = re.search(pattern, youtube_url)
+        if match:
+            video_id_for_heatmap = match.group(1)
+            break
+    
+    if not video_id_for_heatmap:
+        return jsonify({'status': 'error', 'message': 'Could not extract a valid video ID from the URL for Most Replayed data.'}), 400
+
+    try:
+        heatmap_result = get_youtube_most_replayed_heatmap_data(video_id_for_heatmap)
+        if isinstance(heatmap_result, str): 
+            if "Heatmap data not found" in heatmap_result:
+                return jsonify({'status': 'error', 'message': heatmap_result}), 404
+            return jsonify({'status': 'error', 'message': heatmap_result}), 500
+        
+        if heatmap_result: 
+            return jsonify({
+                "status": "success",
+                "video_id": heatmap_result.get("video_id", video_id_for_heatmap), 
+                "most_replayed_label": heatmap_result.get("most_replayed_label"),
+                "most_replayed_label_marker_data": heatmap_result.get("most_replayed_label_marker_data"),
+                "highest_intensity_marker_data": heatmap_result.get("highest_intensity_marker_data")
+            })
+        else: 
+            return jsonify({'status': 'error', 'message': 'Heatmap data not found or is empty.'}), 404
+    except Exception as e:
+        print(f"[API GET /api/get-most-replayed] Error for {video_id_for_heatmap}: {e}"); traceback.print_exc()
+        return jsonify({'status': 'error', 'message': f'An unexpected error occurred: {str(e)}'}), 500
+
+@application.route('/api/clear-cache', methods=['POST'])
+def clear_cache_endpoint():
+    print(f"\n[API POST /api/clear-cache] Called at {time.ctime()}")
+    try: data = request.get_json(); assert data, "No JSON data"
+    except Exception as e: return jsonify({'status': 'error', 'error': 'Invalid JSON payload', 'message': str(e)}), 400
+    
+    youtube_url = data.get('youtube_url')
+    if not youtube_url: return jsonify({'status': 'error', 'error': 'youtube_url is required'}), 400
+    
+    print(f"[API POST /api/clear-cache] Clearing cache for URL: {youtube_url}")
+    video_id_cache_key = get_cache_key(youtube_url)
+    
+    cache_file_path = os.path.join(application.config['CACHE_FOLDER'], f"{video_id_cache_key}.json")
+    cleared_from_disk = False
+    if os.path.exists(cache_file_path):
+        try: os.remove(cache_file_path); cleared_from_disk = True
+        except Exception as e_clear_disk: print(f"[API POST /api/clear-cache] Error removing {cache_file_path}: {e_clear_disk}")
+    
+    task_cancelled_or_removed = False
+    if video_id_cache_key in application.audio_analysis_futures:
+        future = application.audio_analysis_futures[video_id_cache_key]
+        if not future.done():
+            if future.cancel(): task_cancelled_or_removed = True
+        del application.audio_analysis_futures[video_id_cache_key]
+        if not task_cancelled_or_removed: task_cancelled_or_removed = True 
+        print(f"[API POST /api/clear-cache] Task for {video_id_cache_key} cancelled/removed: {task_cancelled_or_removed}")
+
+    if cleared_from_disk or task_cancelled_or_removed:
+        return jsonify({'status': 'success', 'message': f'Cache/task for {youtube_url} (key: {video_id_cache_key}) handled.'})
+    return jsonify({'status': 'warning', 'message': f'No cache/task found for {youtube_url} (key: {video_id_cache_key}).'})
 
 # --- 5. Health Check 및 File/App 서빙 ---
 @application.route('/health')
