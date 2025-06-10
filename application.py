@@ -24,15 +24,11 @@ COOKIE_FILE_PATH = '/tmp/cookies.txt'
 
 application = Flask(__name__, static_folder='frontend/dist', static_url_path='')
 
-# ### CORRECT PATH CONFIGURATION ###
-# This is the single source of truth for where files are stored on the server.
 DOWNLOAD_DIRECTORY = '/var/app/current/downloads'
-application.config['UPLOAD_FOLDER'] = DOWNLOAD_DIRECTORY # This ensures the background task uses the right path.
+application.config['UPLOAD_FOLDER'] = DOWNLOAD_DIRECTORY
 application.config['CACHE_FOLDER'] = '/tmp/yt-hl-cache'
 
-
 # --- 2. 스레드 풀 및 에러 핸들러 ---
-# (No changes here)
 application.audio_executor = ThreadPoolExecutor(max_workers=2)
 application.audio_analysis_futures = {}
 
@@ -79,7 +75,11 @@ def save_to_cache(cache_key, data):
     cache_file = os.path.join(application.config['CACHE_FOLDER'], f"{cache_key}.json")
     with open(cache_file, 'w') as f: json.dump(data, f, indent=2)
 
+### EB-FIX: A more robust download function ###
 def download_audio(youtube_url, output_path='.'):
+    """
+    Downloads and converts audio in one atomic operation, returning the final file path.
+    """
     try:
         output_template = os.path.join(output_path, '%(id)s.%(ext)s')
         ydl_opts = {
@@ -98,23 +98,27 @@ def download_audio(youtube_url, output_path='.'):
             print(f"[DOWNLOAD_WARNING] Cookie file not found at {COOKIE_FILE_PATH}. Proceeding without cookies.")
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info_dict = ydl.extract_info(youtube_url, download=False)
-            video_id = info_dict.get('id')
-            if not video_id: raise Exception("Could not extract video ID.")
+            # Perform download and get the final, post-processed info dict in one call.
+            # This is more robust than getting info first.
+            info_dict = ydl.extract_info(youtube_url, download=True)
             
-            expected_filepath = os.path.join(output_path, f"{video_id}.mp3")
-            ydl.download([youtube_url])
+            final_filepath = None
+            # The final path is usually in 'requested_downloads' after post-processing
+            if 'requested_downloads' in info_dict and info_dict['requested_downloads']:
+                final_filepath = info_dict['requested_downloads'][0].get('filepath')
+            # Fallback for different yt-dlp versions or flows
+            elif 'filepath' in info_dict:
+                final_filepath = info_dict.get('filepath')
 
-            if os.path.exists(expected_filepath):
-                print(f"[DOWNLOAD] Success. File path: {expected_filepath}")
-                return expected_filepath
+            # The ultimate verification: does the file exist on disk?
+            if final_filepath and os.path.exists(final_filepath):
+                 print(f"[DOWNLOAD] Success. Final file is at: {final_filepath}")
+                 return final_filepath
             else:
-                if 'requested_downloads' in info_dict and info_dict['requested_downloads']:
-                    actual_filepath = info_dict['requested_downloads'][0].get('filepath')
-                    if actual_filepath and os.path.exists(actual_filepath):
-                        print(f"[DOWNLOAD] Success (fallback). File path: {actual_filepath}")
-                        return actual_filepath
-                raise Exception(f"File not found after download. Expected at {expected_filepath}")
+                 # If we get here, something went wrong and the file is missing.
+                 print(f"[DOWNLOAD_ERROR] yt-dlp finished, but the final file could not be found.")
+                 print(f"Final info_dict for debugging: {info_dict}")
+                 raise Exception("Could not find the final audio file after processing.")
     except Exception as e:
         print(f"[DOWNLOAD_ERROR] Critical failure in download_audio: {e}")
         traceback.print_exc()
@@ -144,45 +148,35 @@ def get_highlights(audio_path, max_highlights=15, target_sr=16000):
         return sorted([round(t, 2) for t in highlight_times])[:max_highlights]
     except Exception as e:
         print(f"Error in get_highlights: {e}")
-        traceback.print_exc() # Print the full error for debugging
+        traceback.print_exc()
         return []
 
 def background_analysis_task(url, key, force_processing_flag):
     audio_filepath = None
     try:
-        # This now correctly uses application.config['UPLOAD_FOLDER'], which is /var/app/current/downloads
         audio_filepath = download_audio(url, application.config['UPLOAD_FOLDER'])
-        
         audio_highlights = get_highlights(audio_filepath)
-        
-        # If get_highlights fails and returns an empty list, handle it
         if not audio_highlights and librosa.get_duration(filename=audio_filepath) >= 5:
-             # This indicates an analysis error, not a short video
              raise Exception("Highlight analysis failed or returned no results.")
-
         result_data = {
             'status': 'success',
             'message': 'Analysis complete.',
             'audio_highlights': audio_highlights,
             'timestamp': time.time(),
-            # Add the filename to the result so the frontend knows what to download
             'download_filename': os.path.basename(audio_filepath) 
         }
         save_to_cache(key, result_data)
-
     except Exception as e:
         print(f"[BG_TASK_ERROR] for key {key}: {e}")
         traceback.print_exc()
         error_data = {'status': 'error', 'message': f"Analysis failed: {str(e)}", 'timestamp': time.time()}
         save_to_cache(key, error_data)
     finally:
-        # Do not delete the file here, so it's available for download.
-        # You may want a separate cleanup job later.
+        # Leaving the file for download.
         if key in application.audio_analysis_futures:
             del application.audio_analysis_futures[key]
 
 # --- 4. API 라우트 ---
-# (No changes here)
 @application.route('/api/process-youtube', methods=['POST'])
 def process_youtube_url_endpoint():
     data = request.get_json()
@@ -213,7 +207,6 @@ def health_check():
 
 @application.route('/download/<path:filename>')
 def download_file(filename):
-    """Serves a file from the DOWNLOAD_DIRECTORY."""
     try:
         return send_from_directory(DOWNLOAD_DIRECTORY, filename, as_attachment=True)
     except FileNotFoundError:
