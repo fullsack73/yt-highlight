@@ -284,11 +284,11 @@ function App() {
 
     let allTimestamps = [...formattedPriority, ...formattedRegular, ...formattedAudio].filter(stamp => stamp !== null);
 
-    if (mostReplayedData && mostReplayedData.status === 'success' && mostReplayedData.data) {
+    if (mostReplayedData && mostReplayedData.status === 'success' && (mostReplayedData.highest_intensity_marker_data || mostReplayedData.most_replayed_label_marker_data)) {
       console.log("App.js combinedTimestamps useEffect: Processing mostReplayedData.");
-      const highestIntensityMarker = mostReplayedData.data.highest_intensity_marker_data;
-      const mrLabel = mostReplayedData.data.most_replayed_label;
-      const mostReplayedLabelMarker = mostReplayedData.data.most_replayed_label_marker_data;
+      const highestIntensityMarker = mostReplayedData.highest_intensity_marker_data;
+      const mrLabel = mostReplayedData.most_replayed_label;
+      const mostReplayedLabelMarker = mostReplayedData.most_replayed_label_marker_data;
       
       // Process highest intensity marker
       if (highestIntensityMarker && highestIntensityMarker.startMillis) {
