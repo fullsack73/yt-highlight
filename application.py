@@ -429,24 +429,49 @@ def clear_cache_endpoint():
     print(f"[API POST /api/clear-cache] Clearing cache for URL: {youtube_url}")
     video_id_cache_key = get_cache_key(youtube_url)
     
+    # --- 1. Clear JSON cache file ---
     cache_file_path = os.path.join(application.config['CACHE_FOLDER'], f"{video_id_cache_key}.json")
-    cleared_from_disk = False
+    cleared_json_from_disk = False
     if os.path.exists(cache_file_path):
-        try: os.remove(cache_file_path); cleared_from_disk = True
-        except Exception as e_clear_disk: print(f"[API POST /api/clear-cache] Error removing {cache_file_path}: {e_clear_disk}")
-    
+        try: 
+            os.remove(cache_file_path)
+            cleared_json_from_disk = True
+            print(f"[API POST /api/clear-cache] Successfully deleted JSON cache: {cache_file_path}")
+        except Exception as e_clear_disk: 
+            print(f"[API POST /api/clear-cache] Error removing JSON cache {cache_file_path}: {e_clear_disk}")
+
+    # --- 2. Clear downloaded MP3 file ---
+    mp3_file_path = os.path.join(DOWNLOAD_DIRECTORY, f"{video_id_cache_key}.mp3")
+    cleared_mp3_from_disk = False
+    if os.path.exists(mp3_file_path):
+        try: 
+            os.remove(mp3_file_path)
+            cleared_mp3_from_disk = True
+            print(f"[API POST /api/clear-cache] Successfully deleted MP3 file: {mp3_file_path}")
+        except Exception as e_clear_mp3: 
+            print(f"[API POST /api/clear-cache] Error removing MP3 file {mp3_file_path}: {e_clear_mp3}")
+
+    # --- 3. Cancel any running analysis task ---
     task_cancelled_or_removed = False
     if video_id_cache_key in application.audio_analysis_futures:
-        future = application.audio_analysis_futures[video_id_cache_key]
+        future = application.audio_analysis_futures.pop(video_id_cache_key) # Atomically remove the future
         if not future.done():
-            if future.cancel(): task_cancelled_or_removed = True
-        del application.audio_analysis_futures[video_id_cache_key]
-        if not task_cancelled_or_removed: task_cancelled_or_removed = True 
-        print(f"[API POST /api/clear-cache] Task for {video_id_cache_key} cancelled/removed: {task_cancelled_or_removed}")
+            if future.cancel():
+                task_cancelled_or_removed = True
+                print(f"[API POST /api/clear-cache] Actively cancelled background task for {video_id_cache_key}.")
+        else:
+            task_cancelled_or_removed = True # Task was already done but is now removed
+            print(f"[API POST /api/clear-cache] Removed completed/failed task for {video_id_cache_key}.")
 
-    if cleared_from_disk or task_cancelled_or_removed:
-        return jsonify({'status': 'success', 'message': f'Cache/task for {youtube_url} (key: {video_id_cache_key}) handled.'})
-    return jsonify({'status': 'warning', 'message': f'No cache/task found for {youtube_url} (key: {video_id_cache_key}).'})
+    # --- 4. Final response ---
+    if cleared_json_from_disk or cleared_mp3_from_disk or task_cancelled_or_removed:
+        messages = []
+        if cleared_json_from_disk: messages.append("JSON cache cleared.")
+        if cleared_mp3_from_disk: messages.append("MP3 file deleted.")
+        if task_cancelled_or_removed: messages.append("Analysis task handled.")
+        return jsonify({'status': 'success', 'message': ' '.join(messages), 'details': {'key': video_id_cache_key}})
+    
+    return jsonify({'status': 'warning', 'message': f'No cache, MP3 file, or running task found for this URL.', 'details': {'key': video_id_cache_key}})
 
 # --- 5. Health Check 및 File/App 서빙 ---
 @application.route('/health')
