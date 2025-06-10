@@ -9,3 +9,4 @@ yt-dlp==2025.06.09
 requests==2.31.0
 scipy==1.11.4
 gunicorn==21.2.0
+resampy==0.4.3
