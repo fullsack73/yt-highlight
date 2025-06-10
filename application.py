@@ -87,7 +87,7 @@ def download_audio(youtube_url, output_path='.'):
         output_template = os.path.join(output_path, '%(id)s.%(ext)s')
 
         ydl_opts = {
-            'format': 'bestaudio[ext=m4a]/bestaudio/worstaudio/worst',
+            'format': 'worstaudio/worst',
             'outtmpl': output_template,
             'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '64'}],
             'quiet': True, 

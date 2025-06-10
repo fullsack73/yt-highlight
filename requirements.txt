@@ -5,7 +5,7 @@ flask-cors==4.0.0
 librosa==0.10.1
 numpy==1.24.3
 Werkzeug==2.3.7
-yt-dlp==2023.12.30
+yt-dlp==2025.06.09
 requests==2.31.0
 scipy==1.11.4
 gunicorn==21.2.0
