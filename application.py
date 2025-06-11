@@ -139,9 +139,6 @@ def save_to_cache(cache_key, data):
     cache_file = os.path.join(application.config['CACHE_FOLDER'], f"{cache_key}.json")
     with open(cache_file, 'w') as f: json.dump(data, f, indent=2)
 
-class DownloadError(Exception):
-    pass
-
 def download_audio(youtube_url, output_path='.', progress_hook=None):
     # EB-FIX: Use a temporary directory for each download to prevent race conditions
     # in multi-worker environments like Elastic Beanstalk.
@@ -256,39 +253,6 @@ def get_highlights(audio_path, max_highlights=15, target_sr=16000):
         # traceback.print_exc() # Already logged with exc_info=True
         return []
 
-def background_analysis_task(youtube_url, key, force_fresh=False):
-    try:
-        # 1. Update status: Downloading
-        save_to_cache(key, {'status': 'processing', 'message': 'Downloading audio... Please wait.'})
-        audio_filepath = download_audio(youtube_url, output_path=application.config['UPLOAD_FOLDER'])
-        if not audio_filepath:
-            raise Exception("Audio download failed to return a valid file path.")
-
-        save_to_cache(key, {'status': 'processing', 'message': 'Download complete. Analyzing audio...'})
-        application.logger.info(f"[BG_TASK] Starting audio analysis for {key}")
-        audio_highlights = get_highlights(audio_filepath)
-        application.logger.info(f"[BG_TASK] Finished audio analysis for {key}, found {len(audio_highlights)} highlights.")
-
-        result_data = {
-            'status': 'success',
-            'audio_highlights': audio_highlights,
-            'timestamp': time.time(),
-            'download_filename': os.path.basename(audio_filepath) 
-        }
-        save_to_cache(key, result_data)
-
-    except DownloadError as e:
-        application.logger.error(f"[BG_TASK_DOWNLOAD_ERROR] for key {key}: {e}")
-        error_data = {'status': 'error', 'message': f"Download failed: {str(e)}", 'timestamp': time.time()}
-        save_to_cache(key, error_data)
-    except Exception as e:
-        application.logger.error(f"[BG_TASK_ANALYSIS_ERROR] for key {key}: {e}", exc_info=True)
-        error_data = {'status': 'error', 'message': f"Analysis failed: {str(e)}", 'timestamp': time.time()}
-        save_to_cache(key, error_data)
-    finally:
-        if key in application.audio_analysis_futures:
-            del application.audio_analysis_futures[key]
-=======
 def background_analysis_task(url, key, force_processing_flag):
     application.logger.info(f"[{key}] Background task started for {url}")
     status_store = application.analysis_status_store
@@ -335,7 +299,6 @@ def background_analysis_task(url, key, force_processing_flag):
         save_to_cache(key, error_result) # Cache the error to prevent retries
         status_store[key] = error_result # Store final error
         return error_result
->>>>>>> 3920419 (fixed stuff)
 
 # --- 4. API 라우트 ---
 @application.route('/api/process-youtube', methods=['POST'])
