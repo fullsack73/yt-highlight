@@ -31,7 +31,7 @@ application.config['UPLOAD_FOLDER'] = DOWNLOAD_DIRECTORY
 application.config['CACHE_FOLDER'] = '/tmp/yt-hl-cache'
 
 # --- 2. 스레드 풀 및 에러 핸들러 ---
-application.audio_executor = ThreadPoolExecutor(max_workers=2)
+application.audio_executor = ThreadPoolExecutor(max_workers=1) # Reduced for stability
 application.audio_analysis_futures = {}
 
 @application.errorhandler(Exception)
@@ -210,12 +210,31 @@ def calculate_energy(y, frame_length, hop_length):
     return np.array([np.sum(np.abs(y[i:i+frame_length])**2) for i in range(0, len(y) - frame_length, hop_length)])
 
 def get_highlights(audio_path, max_highlights=15, target_sr=16000):
+    application.logger.info(f"[GET_HIGHLIGHTS] Starting analysis for: {audio_path}")
     try:
+        if not audio_path or not os.path.exists(audio_path):
+            application.logger.error(f"[GET_HIGHLIGHTS] Audio file does not exist or path is null: {audio_path}")
+            return []
+        if os.path.getsize(audio_path) == 0:
+            application.logger.error(f"[GET_HIGHLIGHTS] Audio file is empty: {audio_path}")
+            return []
+
+        application.logger.info(f"[GET_HIGHLIGHTS] Attempting to load audio: {audio_path}")
         y, sr = librosa.load(audio_path, sr=target_sr, res_type='kaiser_fast', mono=True)
-        if librosa.get_duration(y=y, sr=sr) < 5: return []
+        application.logger.info(f"[GET_HIGHLIGHTS] Successfully loaded audio: {audio_path}")
+
+        duration = librosa.get_duration(y=y, sr=sr)
+        application.logger.info(f"[GET_HIGHLIGHTS] Audio duration: {duration}s for {audio_path}")
+        if duration < 5: 
+            application.logger.info(f"[GET_HIGHLIGHTS] Audio duration < 5s, returning empty list for {audio_path}")
+            return []
+
         frame_length, hop_length = int(sr * 0.1), int(sr * 0.05)
         energy = calculate_energy(y, frame_length, hop_length)
-        if len(energy) < 10: return []
+        if len(energy) < 10: 
+            application.logger.info(f"[GET_HIGHLIGHTS] Not enough energy frames, returning empty list for {audio_path}")
+            return []
+
         threshold = np.percentile(energy, 95)
         peaks = np.where(energy > threshold)[0]
         highlight_times = []
@@ -226,10 +245,13 @@ def get_highlights(audio_path, max_highlights=15, target_sr=16000):
                 if t_sec - last_time >= 5.0:
                     highlight_times.append(t_sec)
                     last_time = t_sec
-        return sorted([round(t, 2) for t in highlight_times])[:max_highlights]
+        
+        processed_highlights = sorted([round(t, 2) for t in highlight_times])[:max_highlights]
+        application.logger.info(f"[GET_HIGHLIGHTS] Found {len(processed_highlights)} highlights for {audio_path}")
+        return processed_highlights
     except Exception as e:
-        print(f"Error in get_highlights: {e}")
-        traceback.print_exc()
+        application.logger.error(f"[GET_HIGHLIGHTS_ERROR] Error processing {audio_path}: {e}", exc_info=True)
+        # traceback.print_exc() # Already logged with exc_info=True
         return []
 
 def background_analysis_task(url, key, force_processing_flag):
