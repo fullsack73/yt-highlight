@@ -89,8 +89,12 @@ function App() {
         }
         setIsAnalyzing(false);
         return;
+      } else if (initialData.status === 'processing' && initialData.cache_key) {
+        setAnalysisProgress('Task submitted. Waiting for progress updates...');
+        pollAnalysisStatus(initialData.cache_key);
       } else if (initialData.status !== 'processing') { // 'processing'이 아니면 에러로 간주 (예: 'error' status from initial call)
         throw new Error(initialData.message || initialData.error || 'Failed to start processing or received immediate error.');
+>>>>>>> c82e141 (fixed 405 ad 400)
       }
 
 
@@ -195,10 +199,8 @@ function App() {
     setMostReplayedData(null);
 
     try {
-      const response = await fetch('/api/get-most-replayed', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ youtube_url: youtubeUrl }),
+      const response = await fetch(`/api/get-most-replayed?url=${encodeURIComponent(youtubeUrl)}`, {
+        method: 'GET'
       });
 
       if (!response.ok) {
