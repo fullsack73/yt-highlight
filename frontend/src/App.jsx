@@ -17,6 +17,7 @@ function App() {
 
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [error, setError] = useState('');
+  const [progressMessage, setProgressMessage] = useState('');
   const [audioAnalysisStarted, setAudioAnalysisStarted] = useState(false); // 이 상태는 현재 UI에 직접적인 영향을 주는지 확인 필요
 
   const [mostReplayedData, setMostReplayedData] = useState(null);
@@ -32,20 +33,22 @@ function App() {
   };
 
   const processAudioAnalysis = async (urlForAnalysis) => {
+    console.log('[DEBUG] processAudioAnalysis: Triggered for URL:', urlForAnalysis);
     if (!urlForAnalysis) {
-      console.error('App.js: Empty URL provided to processAudioAnalysis');
+      console.error('[DEBUG] processAudioAnalysis: Aborted, no URL provided.');
       setError('Cannot start audio analysis: No video URL for analysis.');
       return;
     }
 
-    console.log(`App.js: Starting audio analysis for URL: ${urlForAnalysis}`);
+    console.log(`[DEBUG] processAudioAnalysis: Setting initial state for analysis.`);
     setIsAnalyzing(true);
-    setAudioAnalysisStarted(true); // 상태 업데이트
+    setAudioAnalysisStarted(true);
     setError('');
+    setProgressMessage('Initiating analysis... This may take a moment.');
     setAudioTimestamps([]);
 
     try {
-      console.log('Attempting to start background analysis via POST /api/process-youtube');
+      console.log('[DEBUG] processAudioAnalysis: Sending POST to /api/process-youtube to start analysis.');
       const startResponse = await fetch('/api/process-youtube', {
         method: 'POST',
         mode: 'cors',
@@ -58,125 +61,92 @@ function App() {
           force_fresh: true
         }),
       });
-      console.log(`POST /api/process-youtube response status: ${startResponse.status}`);
+      console.log(`[DEBUG] processAudioAnalysis: Initial response status: ${startResponse.status}`);
 
       if (!startResponse.ok) {
-        const errorData = await startResponse.json().catch(() => ({ error: 'Failed to parse error JSON from /api/process-youtube' }));
-        throw new Error(errorData.error || errorData.message || `HTTP error from /api/process-youtube! status: ${startResponse.status}`);
+        const errorData = await startResponse.json().catch(() => ({ error: 'Failed to parse error JSON' }));
+        throw new Error(errorData.error || errorData.message || `HTTP error! status: ${startResponse.status}`);
       }
 
       const initialData = await startResponse.json();
-      console.log(`Initial response from POST /api/process-youtube: ${JSON.stringify(initialData)}`);
+      console.log('[DEBUG] processAudioAnalysis: Parsed initial data:', JSON.parse(JSON.stringify(initialData)));
 
-      // 백엔드 응답 키 확인: 'highlights' 대신 'audio_highlights' 사용
       if ((initialData.status === 'success' || initialData.status === 'partial_success') && Array.isArray(initialData.audio_highlights)) {
-        console.log(`Found ${initialData.audio_highlights.length} audio_highlights immediately from /api/process-youtube.`);
+        console.log('[DEBUG] processAudioAnalysis: Analysis complete in initial response. Setting data.');
         const formattedHighlights = initialData.audio_highlights.map(h => typeof h === 'number' ? h : parseFloat(h));
         setAudioTimestamps(formattedHighlights);
-        // Most Replayed 데이터도 초기 응답에 포함될 수 있으므로 처리
-        if (initialData.heatmap_info) { // Check if heatmap_info key exists
-            if (initialData.heatmap_info.status === 'success') {
-                console.log("Setting mostReplayedData from initial /api/process-youtube response:", initialData.heatmap_info);
-                setMostReplayedData(initialData.heatmap_info); // Set the full {status, data} object
-            } else {
-                console.log("Heatmap_info in initial response but not 'success'. Will rely on fetchMostReplayedData. Initial heatmap_info:", initialData.heatmap_info);
-            }
+        if (initialData.heatmap_info && initialData.heatmap_info.status === 'success') {
+            setMostReplayedData(initialData.heatmap_info);
         }
         setIsAnalyzing(false);
         return;
-      } else if (initialData.status !== 'processing') { // 'processing'이 아니면 에러로 간주 (예: 'error' status from initial call)
-        throw new Error(initialData.message || initialData.error || 'Failed to start processing or received immediate error.');
+      } else if (initialData.status !== 'processing') {
+        throw new Error(initialData.message || initialData.error || 'Failed to start processing.');
       }
 
-
+      console.log('[DEBUG] processAudioAnalysis: Starting polling loop.');
       let polling = true;
       let attempts = 0;
       const maxAttempts = 90;
-      console.log('Starting polling for results via GET /api/analysis-status');
 
       while (polling && attempts < maxAttempts) {
         await new Promise((resolve) => setTimeout(resolve, 2000));
         attempts++;
-        console.log(`Polling attempt ${attempts}/${maxAttempts}`);
+        console.log(`[DEBUG] processAudioAnalysis: Polling attempt ${attempts}/${maxAttempts}...`);
 
         try {
           const statusUrl = `/api/analysis-status?youtube_url=${encodeURIComponent(urlForAnalysis)}`;
           const statusRes = await fetch(statusUrl, { mode: 'cors' });
-          console.log(`GET /api/analysis-status response code: ${statusRes.status}`);
+          console.log(`[DEBUG] processAudioAnalysis: Polling response status: ${statusRes.status}`);
 
           if (!statusRes.ok) {
-            const errorData = await statusRes.json().catch(() => ({ error: 'Failed to parse error JSON from /api/analysis-status' }));
-            throw new Error(errorData.error || errorData.message || `HTTP error from /api/analysis-status! status: ${statusRes.status}`);
+            const errorData = await statusRes.json().catch(() => ({ error: 'Failed to parse polling error JSON' }));
+            throw new Error(errorData.error || errorData.message || `Polling HTTP error! status: ${statusRes.status}`);
           }
 
           const statusData = await statusRes.json();
-          console.log(`Status data from GET /api/analysis-status: ${JSON.stringify(statusData)}`);
+          console.log('[DEBUG] processAudioAnalysis: Polling response data:', JSON.parse(JSON.stringify(statusData)));
 
-          // 백엔드 응답 키 확인: 'highlights' 대신 'audio_highlights' 사용
-          if ((statusData.status === 'success' || statusData.status === 'partial_success') && Array.isArray(statusData.audio_highlights)) {
-            console.log(`Received ${statusData.audio_highlights.length} audio_highlights from /api/analysis-status.`);
+          if (statusData.status === 'processing' && statusData.message) {
+            setProgressMessage(statusData.message);
+          } else if ((statusData.status === 'success' || statusData.status === 'partial_success') && Array.isArray(statusData.audio_highlights)) {
+            console.log('[DEBUG] processAudioAnalysis: Polling successful. Setting data.');
             const formattedHighlights = statusData.audio_highlights.map(h => typeof h === 'number' ? h : parseFloat(h));
             setAudioTimestamps(formattedHighlights);
-            
-            // Handle heatmap_info from polling response
-            if (statusData.heatmap_info) { // If heatmap_info key exists in the response
-                if (statusData.heatmap_info.status === 'success') {
-                    console.log("Setting mostReplayedData from successful polling response heatmap_info:", statusData.heatmap_info);
-                    setMostReplayedData(statusData.heatmap_info); // Set the full {status, data} object
-                } else {
-                    // Heatmap_info is present but not 'success' (e.g., an error from heatmap processing within the BG task)
-                    // Preserve existing valid mostReplayedData rather than overwriting with an error from polling.
-                    console.log("Heatmap_info in polling response but not status:'success'. Preserving existing mostReplayedData. Polled heatmap_info:", statusData.heatmap_info);
-                }
-            } else {
-                // Heatmap_info key is NOT in the response. Preserve existing mostReplayedData.
-                console.log("No heatmap_info key in polling response, preserving existing mostReplayedData");
+            if (statusData.heatmap_info && statusData.heatmap_info.status === 'success') {
+                setMostReplayedData(statusData.heatmap_info);
             }
             polling = false;
+            setProgressMessage('');
           } else if (statusData.status === 'error') {
-            setError(statusData.error || statusData.message || 'Audio analysis reported an error.');
+            console.error('[DEBUG] processAudioAnalysis: Polling returned an error status:', statusData.message);
+            setError(statusData.message || 'An error occurred during analysis.');
             polling = false;
-          } else if (statusData.status === 'not_started') {
-            console.log('Analysis not_started (reported by /api/analysis-status), attempting to re-trigger POST /api/process-youtube');
-            // 재시도 로직은 신중해야 함. 무한 루프 방지. 여기서는 일단 로그만 남기고 중단.
-            // 또는 특정 횟수만 재시도하도록 수정 가능.
-            // setError('Analysis failed to start properly. Please try again.');
-            // polling = false; 
-            // 아래는 기존 재시도 로직 (필요시 주석 해제)
-            try {
-              const restartRes = await fetch('/api/process-youtube', {
-                method: 'POST',
-                mode: 'cors',
-                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-                body: JSON.stringify({ youtube_url: urlForAnalysis, force_fresh: true }),
-              });
-              console.log(`Re-trigger POST /api/process-youtube response: ${restartRes.status}`);
-              if (!restartRes.ok) {
-                  const restartError = await restartRes.json().catch(() => ({error: "Failed to parse re-trigger error"}));
-                  console.log(`Failed to re-trigger analysis: ${restartError.error || restartRes.statusText}`);
-              }
-            } catch (restartErr) {
-              console.log(`Re-trigger POST /api/process-youtube network error: ${restartErr.message}`);
-            }
+            setProgressMessage('');
           } else if (statusData.status === 'processing') {
-            console.log('Current status from /api/analysis-status: processing...');
+            // Keep polling, message will be updated if available.
+            console.log('[DEBUG] processAudioAnalysis: Status is still processing, continuing poll.');
           } else {
-            console.log(`Unknown status from /api/analysis-status: ${statusData.status}. Full data: ${JSON.stringify(statusData)}`);
+            console.warn('[DEBUG] processAudioAnalysis: Unknown status from polling:', statusData.status);
           }
         } catch (pollErr) {
-          setError(`Error polling audio analysis status: ${pollErr.message}`);
-          polling = false;
+          console.error('[DEBUG] processAudioAnalysis: Error during polling attempt:', pollErr);
+          setError(`Error polling analysis status: ${pollErr.message}`);
+          polling = false; // Stop polling on error
         }
       }
 
       if (attempts >= maxAttempts && polling) {
+        console.error('[DEBUG] processAudioAnalysis: Polling timed out.');
         setError('Audio analysis timed out.');
+        polling = false;
       }
     } catch (err) {
-      console.error('App.js: Error in processAudioAnalysis:', err);
-      setError(err.message || 'An unexpected error occurred during audio analysis setup.');
+      console.error('[DEBUG] processAudioAnalysis: A critical error occurred:', err);
+      setError(err.message);
     } finally {
-      setIsAnalyzing(false);
+        setIsAnalyzing(false);
+        setProgressMessage('');
     }
   };
 
@@ -234,8 +204,43 @@ function App() {
     }
   };
 
+  return (
+    <UrlContext.Provider value={{ videoUrlForContext, setVideoUrlForContext }}>
+      <TimestampContext.Provider value={{ currentTimestampForContext, setCurrentTimestampForContext }}>
+        <div className="App">
+          <header className="App-header">
+            <h1>YT-Highlight-Analyzer</h1>
+          </header>
+          <main>
+            <VideoInput onVideoSubmit={handleVideoSubmit} isAnalyzing={isAnalyzing} />
+            
+            {isAnalyzing && progressMessage && (
+              <div className="analysis-status-container">
+                <p className="progress-message">{progressMessage}</p>
+                <div className="spinner"></div>
+              </div>
+            )}
+
+            {error && (
+              <div className="analysis-status-container">
+                <p className="error-message">Error: {error}</p>
+              </div>
+            )}
+
+            <div className="video-and-comments-container">
+              {appVideoId && <VideoPlayer videoId={appVideoId} timestamps={combinedTimestamps} mostReplayed={mostReplayedData} />}
+              {appVideoId && <VideoComments videoId={appVideoId} priorityTimestamps={priorityCommentTimestamps} regularTimestamps={regularCommentTimestamps} audioHighlights={audioTimestamps} onTimestampsUpdate={setCombinedTimestamps} />}
+            </div>
+          </main>
+        </div>
+      </TimestampContext.Provider>
+    </UrlContext.Provider>
+  );
+
+
   const handleVideoSubmit = async (submittedUrl) => {
-    console.log("App.js: Video URL submitted:", submittedUrl);
+    console.log('[DEBUG] handleVideoSubmit: Function triggered.');
+        console.log('[DEBUG] handleVideoSubmit: URL submitted:', submittedUrl);
     const extractedId = extractVideoIdFromUrl(submittedUrl);
 
     if (extractedId) {
@@ -255,7 +260,8 @@ function App() {
       // 2. Start full audio analysis (사용자가 버튼을 클릭하거나, 자동으로 시작)
       // 여기서는 Most Replayed 정보 표시 후 사용자가 "전체 분석" 버튼을 누르는 시나리오를 가정하지 않고 바로 시작합니다.
       // 만약 버튼 클릭 후 시작하려면 이 호출을 다른 함수로 옮겨야 합니다.
-      processAudioAnalysis(submittedUrl); // 원본 URL을 전달 (백엔드가 ID 추출)
+          console.log('[DEBUG] handleVideoSubmit: Calling processAudioAnalysis.');
+    processAudioAnalysis(submittedUrl);
     } else {
       setError('Invalid YouTube URL. Please provide a valid YouTube video link.');
       setAppVideoId("");
