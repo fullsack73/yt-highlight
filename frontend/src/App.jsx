@@ -1,5 +1,5 @@
 // src/App.jsx
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import VideoComments from "./VideoComments.jsx";
 import VideoInput from "./VideoInput.jsx";
 import VideoPlayer from "./VideoPlayer.jsx";
@@ -16,13 +16,15 @@ function App() {
   const [combinedTimestamps, setCombinedTimestamps] = useState([]);
 
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisProgress, setAnalysisProgress] = useState('');
   const [error, setError] = useState('');
-  const [progressMessage, setProgressMessage] = useState('');
   const [audioAnalysisStarted, setAudioAnalysisStarted] = useState(false); // 이 상태는 현재 UI에 직접적인 영향을 주는지 확인 필요
 
   const [mostReplayedData, setMostReplayedData] = useState(null);
   const [isFetchingMostReplayed, setIsFetchingMostReplayed] = useState(false);
   const [mostReplayedError, setMostReplayedError] = useState('');
+
+  const pollingIntervalRef = useRef(null);
 
   const extractVideoIdFromUrl = (url) => {
     if (!url || typeof url !== 'string') return null;
@@ -32,173 +34,189 @@ function App() {
     return match ? match[1] : null;
   };
 
+  const stopPolling = () => {
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+    }
+  };
+
   const processAudioAnalysis = async (urlForAnalysis) => {
     console.log('[DEBUG] processAudioAnalysis: Triggered for URL:', urlForAnalysis);
     if (!urlForAnalysis) {
-      console.error('[DEBUG] processAudioAnalysis: Aborted, no URL provided.');
+      console.error('App.js: Empty URL provided to processAudioAnalysis');
       setError('Cannot start audio analysis: No video URL for analysis.');
       return;
     }
 
-    console.log(`[DEBUG] processAudioAnalysis: Setting initial state for analysis.`);
+    console.log(`App.js: Starting audio analysis for URL: ${urlForAnalysis}`);
     setIsAnalyzing(true);
-    setAudioAnalysisStarted(true);
+    setAudioAnalysisStarted(true); // 상태 업데이트
     setError('');
     setProgressMessage('Initiating analysis... This may take a moment.');
     setAudioTimestamps([]);
 
     try {
-      console.log('[DEBUG] processAudioAnalysis: Sending POST to /api/process-youtube to start analysis.');
+      console.log('Attempting to start background analysis via POST /api/process-youtube');
       const startResponse = await fetch('/api/process-youtube', {
         method: 'POST',
-        mode: 'cors',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: JSON.stringify({
-          youtube_url: urlForAnalysis,
-          force_fresh: true
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ youtube_url: urlForAnalysis, force_fresh: true }),
       });
-      console.log(`[DEBUG] processAudioAnalysis: Initial response status: ${startResponse.status}`);
+      console.log(`POST /api/process-youtube response status: ${startResponse.status}`);
 
       if (!startResponse.ok) {
-        const errorData = await startResponse.json().catch(() => ({ error: 'Failed to parse error JSON' }));
-        throw new Error(errorData.error || errorData.message || `HTTP error! status: ${startResponse.status}`);
+        const errorData = await startResponse.json().catch(() => ({ error: 'Failed to parse error JSON from /api/process-youtube' }));
+        throw new Error(errorData.error || errorData.message || `HTTP error from /api/process-youtube! status: ${startResponse.status}`);
       }
 
       const initialData = await startResponse.json();
-      console.log('[DEBUG] processAudioAnalysis: Parsed initial data:', JSON.parse(JSON.stringify(initialData)));
+      console.log(`Initial response from POST /api/process-youtube: ${JSON.stringify(initialData)}`);
 
+      // 백엔드 응답 키 확인: 'highlights' 대신 'audio_highlights' 사용
       if ((initialData.status === 'success' || initialData.status === 'partial_success') && Array.isArray(initialData.audio_highlights)) {
-        console.log('[DEBUG] processAudioAnalysis: Analysis complete in initial response. Setting data.');
+        console.log(`Found ${initialData.audio_highlights.length} audio_highlights immediately from /api/process-youtube.`);
         const formattedHighlights = initialData.audio_highlights.map(h => typeof h === 'number' ? h : parseFloat(h));
         setAudioTimestamps(formattedHighlights);
-        if (initialData.heatmap_info && initialData.heatmap_info.status === 'success') {
-            setMostReplayedData(initialData.heatmap_info);
+        // Most Replayed 데이터도 초기 응답에 포함될 수 있으므로 처리
+        if (initialData.heatmap_info) { // Check if heatmap_info key exists
+            if (initialData.heatmap_info.status === 'success') {
+                console.log("Setting mostReplayedData from initial /api/process-youtube response:", initialData.heatmap_info);
+                setMostReplayedData(initialData.heatmap_info); // Set the full {status, data} object
+            } else {
+                console.log("Heatmap_info in initial response but not 'success'. Will rely on fetchMostReplayedData. Initial heatmap_info:", initialData.heatmap_info);
+            }
         }
         setIsAnalyzing(false);
         return;
-      } else if (initialData.status !== 'processing') {
-        throw new Error(initialData.message || initialData.error || 'Failed to start processing.');
+      } else if (initialData.status !== 'processing') { // 'processing'이 아니면 에러로 간주 (예: 'error' status from initial call)
+        throw new Error(initialData.message || initialData.error || 'Failed to start processing or received immediate error.');
       }
 
-      console.log('[DEBUG] processAudioAnalysis: Starting polling loop.');
+
       let polling = true;
       let attempts = 0;
       const maxAttempts = 90;
+      console.log('Starting polling for results via GET /api/analysis-status');
 
       while (polling && attempts < maxAttempts) {
         await new Promise((resolve) => setTimeout(resolve, 2000));
         attempts++;
-        console.log(`[DEBUG] processAudioAnalysis: Polling attempt ${attempts}/${maxAttempts}...`);
+        console.log(`Polling attempt ${attempts}/${maxAttempts}`);
 
         try {
           const statusUrl = `/api/analysis-status?youtube_url=${encodeURIComponent(urlForAnalysis)}`;
           const statusRes = await fetch(statusUrl, { mode: 'cors' });
-          console.log(`[DEBUG] processAudioAnalysis: Polling response status: ${statusRes.status}`);
+          console.log(`GET /api/analysis-status response code: ${statusRes.status}`);
 
           if (!statusRes.ok) {
-            const errorData = await statusRes.json().catch(() => ({ error: 'Failed to parse polling error JSON' }));
-            throw new Error(errorData.error || errorData.message || `Polling HTTP error! status: ${statusRes.status}`);
+            const errorData = await statusRes.json().catch(() => ({ error: 'Failed to parse error JSON from /api/analysis-status' }));
+            throw new Error(errorData.error || errorData.message || `HTTP error from /api/analysis-status! status: ${statusRes.status}`);
           }
 
           const statusData = await statusRes.json();
-          console.log('[DEBUG] processAudioAnalysis: Polling response data:', JSON.parse(JSON.stringify(statusData)));
+          console.log(`Status data from GET /api/analysis-status: ${JSON.stringify(statusData)}`);
 
-          if (statusData.status === 'processing' && statusData.message) {
-            setProgressMessage(statusData.message);
-          } else if ((statusData.status === 'success' || statusData.status === 'partial_success') && Array.isArray(statusData.audio_highlights)) {
-            console.log('[DEBUG] processAudioAnalysis: Polling successful. Setting data.');
+          // 백엔드 응답 키 확인: 'highlights' 대신 'audio_highlights' 사용
+          if ((statusData.status === 'success' || statusData.status === 'partial_success') && Array.isArray(statusData.audio_highlights)) {
+            console.log(`Received ${statusData.audio_highlights.length} audio_highlights from /api/analysis-status.`);
             const formattedHighlights = statusData.audio_highlights.map(h => typeof h === 'number' ? h : parseFloat(h));
             setAudioTimestamps(formattedHighlights);
-            if (statusData.heatmap_info && statusData.heatmap_info.status === 'success') {
-                setMostReplayedData(statusData.heatmap_info);
+            
+            // Handle heatmap_info from polling response
+            if (statusData.heatmap_info) { // If heatmap_info key exists in the response
+                if (statusData.heatmap_info.status === 'success') {
+                    console.log("Setting mostReplayedData from successful polling response heatmap_info:", statusData.heatmap_info);
+                    setMostReplayedData(statusData.heatmap_info); // Set the full {status, data} object
+                } else {
+                    // Heatmap_info is present but not 'success' (e.g., an error from heatmap processing within the BG task)
+                    // Preserve existing valid mostReplayedData rather than overwriting with an error from polling.
+                    console.log("Heatmap_info in polling response but not status:'success'. Preserving existing mostReplayedData. Polled heatmap_info:", statusData.heatmap_info);
+                }
+            } else {
+                // Heatmap_info key is NOT in the response. Preserve existing mostReplayedData.
+                console.log("No heatmap_info key in polling response, preserving existing mostReplayedData");
             }
             polling = false;
-            setProgressMessage('');
           } else if (statusData.status === 'error') {
-            console.error('[DEBUG] processAudioAnalysis: Polling returned an error status:', statusData.message);
-            setError(statusData.message || 'An error occurred during analysis.');
+            setError(statusData.error || statusData.message || 'Audio analysis reported an error.');
             polling = false;
-            setProgressMessage('');
+          } else if (statusData.status === 'not_started') {
+            console.log('Analysis not_started (reported by /api/analysis-status), attempting to re-trigger POST /api/process-youtube');
+            // 재시도 로직은 신중해야 함. 무한 루프 방지. 여기서는 일단 로그만 남기고 중단.
+            // 또는 특정 횟수만 재시도하도록 수정 가능.
+            // setError('Analysis failed to start properly. Please try again.');
+            // polling = false; 
+            // 아래는 기존 재시도 로직 (필요시 주석 해제)
+            try {
+              const restartRes = await fetch('/api/process-youtube', {
+                method: 'POST',
+                mode: 'cors',
+                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                body: JSON.stringify({ youtube_url: urlForAnalysis, force_fresh: true }),
+              });
+              console.log(`Re-trigger POST /api/process-youtube response: ${restartRes.status}`);
+              if (!restartRes.ok) {
+                  const restartError = await restartRes.json().catch(() => ({error: "Failed to parse re-trigger error"}));
+                  console.log(`Failed to re-trigger analysis: ${restartError.error || restartRes.statusText}`);
+              }
+            } catch (restartErr) {
+              console.log(`Re-trigger POST /api/process-youtube network error: ${restartErr.message}`);
+            }
           } else if (statusData.status === 'processing') {
-            // Keep polling, message will be updated if available.
-            console.log('[DEBUG] processAudioAnalysis: Status is still processing, continuing poll.');
+            console.log('Current status from /api/analysis-status: processing...');
           } else {
-            console.warn('[DEBUG] processAudioAnalysis: Unknown status from polling:', statusData.status);
+            console.log(`Unknown status from /api/analysis-status: ${statusData.status}. Full data: ${JSON.stringify(statusData)}`);
           }
         } catch (pollErr) {
-          console.error('[DEBUG] processAudioAnalysis: Error during polling attempt:', pollErr);
-          setError(`Error polling analysis status: ${pollErr.message}`);
-          polling = false; // Stop polling on error
+          setError(`Error polling audio analysis status: ${pollErr.message}`);
+          polling = false;
         }
       }
 
       if (attempts >= maxAttempts && polling) {
-        console.error('[DEBUG] processAudioAnalysis: Polling timed out.');
         setError('Audio analysis timed out.');
-        polling = false;
       }
     } catch (err) {
-      console.error('[DEBUG] processAudioAnalysis: A critical error occurred:', err);
-      setError(err.message);
+      console.error('App.js: Error in processAudioAnalysis:', err);
+      setError(err.message || 'An unexpected error occurred during audio analysis setup.');
     } finally {
-        setIsAnalyzing(false);
-        setProgressMessage('');
+      setIsAnalyzing(false);
     }
   };
 
   const fetchMostReplayedData = async (youtubeUrl) => {
     if (!youtubeUrl) {
-      console.warn("fetchMostReplayedData: No URL provided.");
+      setMostReplayedError("No URL provided for heatmap data.");
       return;
     }
-    console.log(`App.js: Fetching Most Replayed data for URL: ${youtubeUrl}`);
     setIsFetchingMostReplayed(true);
     setMostReplayedError('');
     setMostReplayedData(null);
 
     try {
-      const response = await fetch(`/api/get-most-replayed?url=${encodeURIComponent(youtubeUrl)}`, {
-        method: 'GET',
-        mode: 'cors',
-        headers: {
-          'Accept': 'application/json',
-        },
+      const response = await fetch('/api/get-most-replayed', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ youtube_url: youtubeUrl }),
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: 'Failed to parse error JSON from /api/get-most-replayed' }));
-        if (response.status === 404) {
-          console.log(`App.js: Most Replayed data not found for ${youtubeUrl} (404). Message: ${errorData.message}`);
-          setMostReplayedData(null); // 404는 사용자에게 에러로 표시하지 않음
-          setMostReplayedError(''); // 에러 메시지 상태도 초기화
-        } else {
-          console.error(`App.js: Error fetching Most Replayed data: ${response.status}`, errorData.message);
-          setMostReplayedError(errorData.message || `HTTP error! status: ${response.status}`);
-        }
-        return;
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || `Server responded with status: ${response.status}`);
       }
 
       const data = await response.json();
       if (data.status === 'success') {
-        console.log("App.js: Most Replayed data fetched successfully:", data);
-        console.log("[Debug] Most Replayed Data Received:", data);
         setMostReplayedData(data);
-      } else if (data.status === 'error') {
-        console.log(`App.js: Most Replayed data not found (API reported error): ${data.message}`);
-        setMostReplayedData(null); // API가 에러를 반환해도 사용자에게는 표시하지 않음
-        setMostReplayedError(''); // 에러 메시지 상태도 초기화
       } else {
-        console.warn("App.js: Received unexpected status from /api/get-most-replayed", data);
-        setMostReplayedData(null);
+        throw new Error(data.message || 'Failed to get most replayed data.');
       }
-    } catch (networkError) {
-      console.error("App.js: Network error fetching Most Replayed data:", networkError);
-      setMostReplayedError(`Network error: ${networkError.message}`);
-      setMostReplayedData(null);
+    } catch (e) {
+      setError(`Analysis request failed: ${e.message}`);
+      setIsAnalyzing(false);
+      setAnalysisProgress('');
+      setProgressMessage('');
     } finally {
       setIsFetchingMostReplayed(false);
     }
@@ -239,18 +257,20 @@ function App() {
 
 
   const handleVideoSubmit = async (submittedUrl) => {
-    console.log('[DEBUG] handleVideoSubmit: Function triggered.');
-        console.log('[DEBUG] handleVideoSubmit: URL submitted:', submittedUrl);
+    console.log("App.js: Video URL submitted:", submittedUrl);
     const extractedId = extractVideoIdFromUrl(submittedUrl);
 
-    if (extractedId) {
-      setAppVideoId(extractedId);
+    if (newVideoId) {
+      setAppVideoId(newVideoId);
       setVideoUrlForContext(submittedUrl);
-      setError('');
-      setAudioTimestamps([]);
+      
+      // Reset all data for the new video
+      stopPolling();
       setPriorityCommentTimestamps([]);
       setRegularCommentTimestamps([]);
-      setMostReplayedData(null);
+      setAudioTimestamps([]);
+      setCombinedTimestamps([]);
+      setError('');
       setMostReplayedError('');
       setAudioAnalysisStarted(false);
 
@@ -260,120 +280,79 @@ function App() {
       // 2. Start full audio analysis (사용자가 버튼을 클릭하거나, 자동으로 시작)
       // 여기서는 Most Replayed 정보 표시 후 사용자가 "전체 분석" 버튼을 누르는 시나리오를 가정하지 않고 바로 시작합니다.
       // 만약 버튼 클릭 후 시작하려면 이 호출을 다른 함수로 옮겨야 합니다.
-          console.log('[DEBUG] handleVideoSubmit: Calling processAudioAnalysis.');
-    processAudioAnalysis(submittedUrl);
+      processAudioAnalysis(submittedUrl); // 원본 URL을 전달 (백엔드가 ID 추출)
     } else {
       setError('Invalid YouTube URL. Please provide a valid YouTube video link.');
       setAppVideoId("");
       setVideoUrlForContext("");
       setMostReplayedData(null);
-      setMostReplayedError('');
+      setAnalysisProgress('');
+
+      // Start both analyses
+      processAudioAnalysis(submittedUrl);
+      fetchMostReplayedData(submittedUrl);
+    } else {
+      setError("Invalid YouTube URL. Please check and try again.");
     }
   };
 
+  const formatStamp = (timeInput, type, color, label = null) => {
+    const time = parseFloat(timeInput);
+    if (isNaN(time) || time < 0) return null;
+    return { time, type, color, label };
+  };
+
   useEffect(() => {
-    const formatStamp = (timeInput, type, color, label = null) => {
-      const time = typeof timeInput === 'number' ? timeInput : parseFloat(timeInput);
-      if (isNaN(time)) return null;
-      return { time, type, color, label };
-    };
-
-    console.log("App.js combinedTimestamps useEffect: Triggered.");
-    console.log("App.js combinedTimestamps useEffect: priorityCommentTimestamps:", priorityCommentTimestamps);
-    console.log("App.js combinedTimestamps useEffect: regularCommentTimestamps:", regularCommentTimestamps);
-    console.log("App.js combinedTimestamps useEffect: audioTimestamps:", audioTimestamps);
-    console.log("App.js combinedTimestamps useEffect: mostReplayedData (at start of effect):", JSON.parse(JSON.stringify(mostReplayedData || {})));
-
-    const formattedPriority = priorityCommentTimestamps.map(t => formatStamp(t, 'priority', '#d47b06'));
-    const formattedRegular = regularCommentTimestamps.map(t => formatStamp(t, 'comment', '#065fd4'));
+    const formattedPriority = priorityCommentTimestamps.map(t => formatStamp(t, 'priority', '#ff7f0e'));
+    const formattedRegular = regularCommentTimestamps.map(t => formatStamp(t, 'comment', '#1f77b4'));
     const formattedAudio = audioTimestamps.map(t => formatStamp(t, 'audio', '#2ca02c'));
 
     let allTimestamps = [...formattedPriority, ...formattedRegular, ...formattedAudio].filter(stamp => stamp !== null);
 
     if (mostReplayedData && mostReplayedData.status === 'success' && (mostReplayedData.highest_intensity_marker_data || mostReplayedData.most_replayed_label_marker_data)) {
-      console.log("App.js combinedTimestamps useEffect: Processing mostReplayedData.");
-      const highestIntensityMarker = mostReplayedData.highest_intensity_marker_data;
-      const mrLabel = mostReplayedData.most_replayed_label;
-      const mostReplayedLabelMarker = mostReplayedData.most_replayed_label_marker_data;
+      const { highest_intensity_marker_data: highestIntensityMarker, most_replayed_label_marker_data: mostReplayedLabelMarker } = mostReplayedData;
       
-      // Process highest intensity marker
       if (highestIntensityMarker && highestIntensityMarker.startMillis) {
-        const highestIntensitySeconds = parseFloat(highestIntensityMarker.startMillis) / 1000;
-        console.log("App.js combinedTimestamps useEffect: Parsed highest intensity startTimeSeconds:", highestIntensitySeconds);
-
-        if (!isNaN(highestIntensitySeconds)) {
-          const highestIntensityStamp = formatStamp(
-            highestIntensitySeconds,
-            'mostReplayed',
-            '#800080', // Purple color for most replayed
-            'Highest Intensity' // Label for tooltip
-          );
-          console.log("App.js combinedTimestamps useEffect: Formatted highestIntensityStamp:", highestIntensityStamp);
-          if (highestIntensityStamp) {
-            allTimestamps.push(highestIntensityStamp);
-          }
+        const intensitySeconds = parseFloat(highestIntensityMarker.startMillis) / 1000;
+        if (!isNaN(intensitySeconds)) {
+          allTimestamps.push(formatStamp(intensitySeconds, 'mostReplayed', '#d62728', 'Highest Intensity'));
         }
       }
       
-      // Process most replayed label marker (the point YouTube actually labels as "Most Replayed")
       if (mostReplayedLabelMarker && mostReplayedLabelMarker.startMillis) {
         const labelMarkerSeconds = parseFloat(mostReplayedLabelMarker.startMillis) / 1000;
-        console.log("App.js combinedTimestamps useEffect: Parsed most replayed label startTimeSeconds:", labelMarkerSeconds);
-
+        const mrLabel = mostReplayedData.data.find(d => d.startMillis === mostReplayedLabelMarker.startMillis);
         if (!isNaN(labelMarkerSeconds)) {
-          const labelMarkerStamp = formatStamp(
-            labelMarkerSeconds,
-            'mostReplayed',
-            '#800080', // Purple color for most replayed
-            mrLabel ? mrLabel.label_text : 'Most Replayed' // Add label for tooltip
-          );
-          console.log("App.js combinedTimestamps useEffect: Formatted labelMarkerStamp:", labelMarkerStamp);
-          if (labelMarkerStamp) {
-            allTimestamps.push(labelMarkerStamp);
-          }
+          allTimestamps.push(formatStamp(labelMarkerSeconds, 'mostReplayed', '#800080', mrLabel ? mrLabel.label_text : 'Most Replayed'));
         }
       }
-      
-      // Log if neither marker is available
-      if ((!highestIntensityMarker || !highestIntensityMarker.startMillis) && 
-          (!mostReplayedLabelMarker || !mostReplayedLabelMarker.startMillis)) {
-        console.warn("App.js combinedTimestamps useEffect: Both marker types are missing or invalid in mostReplayedData.");
-      }
-    } else {
-      console.log("App.js combinedTimestamps useEffect: Condition for processing mostReplayedData not met. Data:", JSON.parse(JSON.stringify(mostReplayedData || {})));
     }
 
-    console.log("App.js combinedTimestamps useEffect: All timestamps BEFORE sorting & deduplication:", allTimestamps.map(t => ({...t})));
+    allTimestamps = allTimestamps.filter(Boolean);
 
-    // 시간순 정렬 및 우선순위 정렬
     const priorityOrder = { 'priority': 0, 'mostReplayed': 1, 'comment': 2, 'audio': 3 };
     allTimestamps.sort((a, b) => {
         const timeDiff = a.time - b.time;
-        if (Math.abs(timeDiff) < 0.1) { // Consider times within 0.1s as same for priority sorting
+        if (Math.abs(timeDiff) < 1) { // Group nearby timestamps
             return priorityOrder[a.type] - priorityOrder[b.type];
         }
         return timeDiff;
     });
 
-    // 중복 제거 (1초 이내 근접 타임스탬프)
     const deduplicated = [];
-    const seenTimes = new Set();
-    allTimestamps.forEach(stamp => {
-        const isCloseToSeen = Array.from(seenTimes).some(
-            existingTime => Math.abs(existingTime - stamp.time) < 1 // Keep 1s deduplication window
-        );
-
-        if (!isCloseToSeen) {
-            deduplicated.push(stamp);
-            seenTimes.add(stamp.time);
-        } else {
-            // Optional: Log deduplicated stamps if needed for debugging
-            // console.log(`Deduplicating stamp: ${stamp.type} at ${stamp.time}s due to proximity to a seen time.`);
+    if (allTimestamps.length > 0) {
+      deduplicated.push(allTimestamps[0]);
+      for (let i = 1; i < allTimestamps.length; i++) {
+        if (Math.abs(allTimestamps[i].time - deduplicated[deduplicated.length - 1].time) >= 1) {
+          deduplicated.push(allTimestamps[i]);
         }
-    });
+      }
+    }
 
-    console.log("App.js combinedTimestamps useEffect: Final combined timestamps (deduplicated):", deduplicated.map(t => ({...t})));
     setCombinedTimestamps(deduplicated);
+
+    // Cleanup polling on component unmount
+    return () => stopPolling();
   }, [priorityCommentTimestamps, regularCommentTimestamps, audioTimestamps, mostReplayedData]);
 
   return (
@@ -383,8 +362,8 @@ function App() {
           <div className="container" style={{ maxWidth: '1200px', margin: '0 auto', padding: '20px' }}>
             <VideoInput onVideoSubmit={handleVideoSubmit} />
             
-            {isAnalyzing && <p>히트맵 및 오디오 분석 중...</p>}
-            {error && <p style={{ color: 'red', whiteSpace: 'pre-wrap', border: '1px solid red', padding: '10px', borderRadius: '4px' }}>전체 분석 오류: {error}</p>}
+            {isAnalyzing && <p style={{ color: '#007bff', fontWeight: 'bold' }}>Analysis Status: {analysisProgress}</p>}
+            {error && <p style={{ color: 'red', whiteSpace: 'pre-wrap', border: '1px solid red', padding: '10px', borderRadius: '4px' }}>Error: {error}</p>}
             
             <div className="main-content" style={{ display: 'flex', flexDirection: 'row', marginTop: '20px', gap: '20px' }}>
               <div className="left-column" style={{ flex: '1 1 400px', minWidth: '300px' }}>

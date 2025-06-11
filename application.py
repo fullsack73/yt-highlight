@@ -33,6 +33,7 @@ application.config['CACHE_FOLDER'] = '/tmp/yt-hl-cache'
 # --- 2. 스레드 풀 및 에러 핸들러 ---
 application.audio_executor = ThreadPoolExecutor(max_workers=1) # Reduced for stability
 application.audio_analysis_futures = {}
+application.analysis_status_store = {} # New: To store detailed progress
 
 @application.errorhandler(Exception)
 def handle_exception(e):
@@ -141,15 +142,24 @@ def save_to_cache(cache_key, data):
 class DownloadError(Exception):
     pass
 
-def download_audio(youtube_url, output_path='.'):
+def download_audio(youtube_url, output_path='.', progress_hook=None):
+    # EB-FIX: Use a temporary directory for each download to prevent race conditions
+    # in multi-worker environments like Elastic Beanstalk.
     with tempfile.TemporaryDirectory() as tmpdir:
         try:
             output_template = os.path.join(tmpdir, '%(id)s.%(ext)s')
             ydl_opts = {
                 'format': 'worstaudio/worst',
                 'outtmpl': output_template,
-                'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '64'}],
-                'quiet': True, 'noplaylist': True, 'socket_timeout': 60, 'retries': 3,
+                'progress_hooks': [progress_hook] if progress_hook else [],
+                'postprocessors': [{
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'mp3',
+                    'preferredquality': '192',
+                }],
+                'outtmpl': os.path.join(output_path, '%(id)s.%(ext)s'),
+                'quiet': True, # Suppress verbose output
+                'no_warnings': True,
                 'nocheckcertificate': True, 'ignoreerrors': False, 'throttledratelimit': 1024*1024,
                 'sleep_interval_requests': 2, 'max_sleep_interval': 5,
                 'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
@@ -278,6 +288,54 @@ def background_analysis_task(youtube_url, key, force_fresh=False):
     finally:
         if key in application.audio_analysis_futures:
             del application.audio_analysis_futures[key]
+=======
+def background_analysis_task(url, key, force_processing_flag):
+    application.logger.info(f"[{key}] Background task started for {url}")
+    status_store = application.analysis_status_store
+
+    def progress_hook(d):
+        if d['status'] == 'downloading':
+            # Extract percentage and total size
+            percent_str = d.get('_percent_str', '0.0%').strip()
+            total_bytes_str = d.get('_total_bytes_str', 'N/A').strip()
+            speed_str = d.get('_speed_str', 'N/A').strip()
+            status_store[key] = {
+                'status': 'processing',
+                'stage': 'downloading',
+                'message': f"Downloading: {percent_str} of {total_bytes_str} at {speed_str}"
+            }
+        elif d['status'] == 'finished':
+            status_store[key] = {
+                'status': 'processing',
+                'stage': 'download_complete',
+                'message': 'Download finished, preparing for analysis...'
+            }
+
+    try:
+        # 1. Download audio
+        status_store[key] = {'status': 'processing', 'stage': 'download_start', 'message': 'Starting audio download...'}
+        audio_file_path = download_audio(url, DOWNLOAD_DIRECTORY, progress_hook=progress_hook)
+        if not audio_file_path:
+            raise Exception("Audio download failed to return a file path.")
+
+        # 2. Analyze audio
+        status_store[key] = {'status': 'processing', 'stage': 'analysis_start', 'message': 'Analyzing audio for highlights...'}
+        highlights = get_highlights(audio_file_path)
+        result = {'status': 'success', 'audio_highlights': highlights}
+
+        # 3. Save to cache and clean up status
+        save_to_cache(key, result)
+        status_store[key] = result # Store final result
+        application.logger.info(f"[{key}] Analysis successful and cached.")
+        return result
+
+    except Exception as e:
+        application.logger.error(f"[{key}] Error in background task: {e}", exc_info=True)
+        error_result = {'status': 'error', 'error': 'Analysis failed', 'message': str(e)}
+        save_to_cache(key, error_result) # Cache the error to prevent retries
+        status_store[key] = error_result # Store final error
+        return error_result
+>>>>>>> 3920419 (fixed stuff)
 
 # --- 4. API 라우트 ---
 @application.route('/api/process-youtube', methods=['POST'])
@@ -295,13 +353,35 @@ def process_youtube_url_endpoint():
 
 @application.route('/api/analysis-status', methods=['GET'])
 def analysis_status_endpoint():
-    youtube_url = request.args.get('youtube_url')
-    if not youtube_url: return jsonify({'status': 'error', 'message': "'youtube_url' is required"}), 400
-    cache_key = get_cache_key(youtube_url)
-    if (cached_result := check_cache(cache_key)): return jsonify(cached_result)
-    if cache_key in application.audio_analysis_futures and not application.audio_analysis_futures[cache_key].done():
-        return jsonify({'status': 'processing', 'message': 'Analysis ongoing.'})
-    return jsonify({'status': 'not_started', 'message': 'Analysis not initiated or result is missing.'})
+    cache_key = request.args.get('key')
+    if not cache_key:
+        return jsonify({'status': 'error', 'message': 'Missing key'}), 400
+
+    # Check our new detailed status store first
+    if cache_key in application.analysis_status_store:
+        status_data = application.analysis_status_store[cache_key]
+        # If the task is finished, remove from futures dict to clean up
+        if status_data.get('status') in ['success', 'error']:
+            application.audio_analysis_futures.pop(cache_key, None)
+        return jsonify(status_data)
+
+    # Fallback for tasks that might not have hit the new store logic yet
+    if cache_key in application.audio_analysis_futures:
+        future = application.audio_analysis_futures[cache_key]
+        if future.done():
+            result = future.result()
+            application.analysis_status_store[cache_key] = result # Populate store
+            return jsonify(result)
+        else:
+            # Task is running but hasn't reported detailed status yet
+            return jsonify({'status': 'processing', 'stage': 'initializing', 'message': 'Task is initializing...'})
+
+    # Final fallback to cache for completed jobs from previous server runs
+    cached_result = check_cache(cache_key)
+    if cached_result:
+        return jsonify(cached_result)
+
+    return jsonify({'status': 'error', 'message': 'Unknown or expired analysis key.'}), 404
 
 def format_ms_to_time_string(ms_string: str):
     if ms_string is None or not isinstance(ms_string, (str, int)) or (isinstance(ms_string, str) and not ms_string.isdigit()): return "N/A"
