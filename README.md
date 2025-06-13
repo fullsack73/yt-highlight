@@ -2,7 +2,9 @@
 
 This web application automatically identifies and showcases the most replayed moments in any YouTube video. Users can simply paste a YouTube URL to quickly see the highlights, making it easy to jump to the most interesting parts of a video.
 
-**Live Demo:** [http://yt-hl-env-dev.eba-metdnuyc.ap-northeast-2.elasticbeanstalk.com/](http://yt-hl-env-dev.eba-metdnuyc.ap-northeast-2.elasticbeanstalk.com/)
+**Live Demo:** 
+
+Terminated(API, Cost issue)
 
 ## Features
 
@@ -48,3 +50,9 @@ This web application automatically identifies and showcases the most replayed mo
 ├── Procfile          # Specifies the command to run the app on Elastic Beanstalk
 └── .ebextensions/    # Elastic Beanstalk configuration files (e.g., for installing ffmpeg)
 ```
+
+## Things to do before deploying again
+
+1. Create S3 bucket for cookies(for yt-dlp usage)
+2. Reactivate or create new API key for Youtube Data API
+3. Recreate EB environment
